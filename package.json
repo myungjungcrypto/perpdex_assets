@@ -1,0 +1,23 @@
+{
+  "name": "perpdex-balance-monitor",
+  "version": "1.0.0",
+  "description": "Monitor balances across 7 perp DEXes, log to Google Sheets, alert via Telegram",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "ts-node src/index.ts"
+  },
+  "dependencies": {
+    "axios": "^1.7.0",
+    "dotenv": "^16.4.0",
+    "ethers": "^6.13.0",
+    "googleapis": "^144.0.0",
+    "@solana/web3.js": "^1.95.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "typescript": "^5.5.0",
+    "ts-node": "^10.9.0"
+  }
+}
