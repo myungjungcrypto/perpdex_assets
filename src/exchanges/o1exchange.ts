@@ -44,7 +44,18 @@ export class O1ExchangeFetcher implements ExchangeFetcher {
   }
 
   async fetchBalance(): Promise<ExchangeBalance> {
-    const nord = await getNord();
+    let nord: Nord;
+    try {
+      nord = await getNord();
+    } catch (err: unknown) {
+      const e = err as Error;
+      // Surface the real error instead of opaque AggregateError
+      if (e.name === "AggregateError" && "errors" in e) {
+        const msgs = (e as AggregateError).errors.map((x: Error) => x.message).join("; ");
+        throw new Error(`01Exchange: Nord SDK init failed — ${msgs}`);
+      }
+      throw new Error(`01Exchange: Nord SDK init failed — ${e.message}`);
+    }
     const walletAddress = config.o1.walletAddress!;
 
     // Get user account IDs by public key (read-only, no signing needed)

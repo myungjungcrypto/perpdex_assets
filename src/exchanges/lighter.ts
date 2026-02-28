@@ -5,7 +5,11 @@ import { logger } from "../utils/logger";
 
 // Lighter REST API: https://apidocs.lighter.xyz
 // Base URL: https://mainnet.zklighter.elliot.ai
-// Auth: ro:{account_index}:{scope}:{expiry}:{hex} — no "Bearer" prefix
+// Auth: Not needed for GET /api/v1/account (public endpoint)
+// RO token format: ro:{account_index}:{scope}:{expiry}:{hex}
+//
+// GET /api/v1/account?by=index&value={account_index}
+// Response: { code: 0, accounts: [{ collateral, positions, ... }] }
 
 interface LighterPosition {
   market_id: number;
@@ -23,6 +27,20 @@ interface LighterPosition {
   open_order_count: number;
 }
 
+interface LighterAccount {
+  index: number;
+  collateral: string;
+  available_balance: string;
+  total_asset_value: string;
+  positions: LighterPosition[];
+}
+
+interface LighterResponse {
+  code: number;
+  total: number;
+  accounts: LighterAccount[];
+}
+
 export class LighterFetcher implements ExchangeFetcher {
   name = "Lighter";
   enabled: boolean;
@@ -34,26 +52,34 @@ export class LighterFetcher implements ExchangeFetcher {
     }
   }
 
-  private get headers() {
-    return {
-      // Lighter uses raw token, no "Bearer" prefix
-      Authorization: config.lighter.roToken!,
-      Accept: "application/json",
-    };
+  private getAccountIndex(): string {
+    // Extract account index from RO token: ro:{account_index}:{scope}:{expiry}:{hex}
+    const parts = config.lighter.roToken!.split(":");
+    if (parts.length >= 2 && parts[0] === "ro") {
+      return parts[1];
+    }
+    // Fallback: try to use the whole token as account index
+    return parts[1] ?? "0";
   }
 
   async fetchBalance(): Promise<ExchangeBalance> {
     const base = config.lighter.baseUrl;
+    const accountIndex = this.getAccountIndex();
 
-    const accountRes = await axios.get(`${base}/api/v1/account`, {
-      headers: this.headers,
+    const accountRes = await axios.get<LighterResponse>(`${base}/api/v1/account`, {
+      params: { by: "index", value: accountIndex },
+      headers: { Accept: "application/json" },
       timeout: 10000,
     });
 
     const data = accountRes.data;
+    const account = data.accounts?.[0];
+    if (!account) {
+      throw new Error(`Lighter: no account found for index ${accountIndex}`);
+    }
 
-    const collateral = Number(data.collateral ?? 0);
-    const positionsRaw: LighterPosition[] = data.positions ?? [];
+    const collateral = Number(account.collateral ?? 0);
+    const positionsRaw: LighterPosition[] = account.positions ?? [];
 
     // Calculate portfolio value from collateral + unrealized PnL
     let totalUnrealizedPnl = 0;
@@ -74,11 +100,6 @@ export class LighterFetcher implements ExchangeFetcher {
     });
 
     const totalUsd = collateral + totalUnrealizedPnl;
-    // Estimate margin used from position values
-    const totalPositionValue = positionsRaw.reduce(
-      (sum, p) => sum + Math.abs(Number(p.position_value ?? 0)),
-      0
-    );
     const marginUsed = positionsRaw.reduce(
       (sum, p) =>
         sum + Math.abs(Number(p.position_value ?? 0)) * Number(p.initial_margin_fraction ?? 0.1),
@@ -97,7 +118,7 @@ export class LighterFetcher implements ExchangeFetcher {
       positionCount: positions.length,
       unrealizedPnl: totalUnrealizedPnl,
       positions,
-      raw: data,
+      raw: account as unknown as Record<string, unknown>,
     };
   }
 }

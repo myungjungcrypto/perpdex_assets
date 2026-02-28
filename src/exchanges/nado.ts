@@ -10,10 +10,13 @@ import { logger } from "../utils/logger";
 
 const X18 = 1e18;
 
-function toSubaccount(address: string): string {
-  // Default subaccount: address + 12 zero bytes
+function toSubaccount(address: string, name = "default"): string {
+  // Subaccount = address (20 bytes) + name as bytes12 (UTF-8, zero-padded)
+  // Nado UI and SDKs use "default" as the standard subaccount name.
+  // "default" in hex = 64656661756c74 (7 bytes) + 5 zero bytes padding
   const addr = address.toLowerCase().replace("0x", "");
-  return "0x" + addr + "0".repeat(24);
+  const nameHex = Buffer.from(name).toString("hex").padEnd(24, "0");
+  return "0x" + addr + nameHex;
 }
 
 interface SubaccountHealth {
