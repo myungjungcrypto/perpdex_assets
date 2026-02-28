@@ -12,6 +12,8 @@ import { sendAlerts, sendStartupMessage } from "./services/telegram";
 import { analyzeAll } from "./services/risk-analyzer";
 import { logger } from "./utils/logger";
 
+const CYCLE_INTERVAL_MS = Number(process.env.CYCLE_INTERVAL_MS ?? 60_000); // default 1 min
+
 const fetchers: ExchangeFetcher[] = [
   new ParadexFetcher(),
   new LighterFetcher(),
@@ -99,8 +101,11 @@ async function run(): Promise<void> {
   }
 }
 
+let intervalId: ReturnType<typeof setInterval> | null = null;
+
 async function main(): Promise<void> {
   logger.info("Balance Monitor starting up...");
+  logger.info(`Cycle interval: ${CYCLE_INTERVAL_MS / 1000}s`);
 
   // Ensure sheet headers exist on first run
   try {
@@ -115,8 +120,27 @@ async function main(): Promise<void> {
   // Run immediately
   await run();
 
-  logger.info("Cycle finished. Process will exit (PM2 cron will restart).");
+  // Schedule recurring cycles
+  intervalId = setInterval(async () => {
+    try {
+      await run();
+    } catch (err) {
+      logger.error("Cycle failed (uncaught)", err);
+    }
+  }, CYCLE_INTERVAL_MS);
+
+  logger.info("Continuous mode active. Press Ctrl+C to stop.");
 }
+
+// Graceful shutdown
+function shutdown(signal: string) {
+  logger.info(`Received ${signal}. Shutting down...`);
+  if (intervalId) clearInterval(intervalId);
+  process.exit(0);
+}
+
+process.on("SIGINT", () => shutdown("SIGINT"));
+process.on("SIGTERM", () => shutdown("SIGTERM"));
 
 main().catch((err) => {
   logger.error("Fatal error", err);

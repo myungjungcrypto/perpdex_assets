@@ -95,7 +95,7 @@ export async function sendStartupMessage(): Promise<void> {
       `https://api.telegram.org/bot${config.telegram.botToken}/sendMessage`,
       {
         chat_id: config.telegram.chatId,
-        text: `\u{2705} <b>Balance Monitor Started</b>\nMonitoring 7 exchanges every 5 minutes.`,
+        text: `\u{2705} <b>Balance Monitor Started</b>\nMonitoring exchanges every 1 minute.`,
         parse_mode: "HTML",
       }
     );

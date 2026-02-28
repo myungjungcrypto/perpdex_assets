@@ -3,8 +3,8 @@ module.exports = {
     {
       name: "balance-monitor",
       script: "dist/index.js",
-      cron_restart: "*/5 * * * *",
-      autorestart: false,
+      autorestart: true,
+      restart_delay: 5000,
       watch: false,
       env: {
         NODE_ENV: "production",
