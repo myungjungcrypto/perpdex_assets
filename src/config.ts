@@ -43,7 +43,7 @@ export const config = {
   // Extended
   extended: {
     apiKey: optEnv("EXTENDED_API_KEY"),
-    baseUrl: env("EXTENDED_BASE_URL", "https://api.extended.exchange"),
+    baseUrl: env("EXTENDED_BASE_URL", "https://api.starknet.extended.exchange/api/v1"),
   },
 
   // Pacifica

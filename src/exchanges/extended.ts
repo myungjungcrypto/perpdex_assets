@@ -3,6 +3,44 @@ import { ExchangeBalance, ExchangeFetcher, Position } from "./types";
 import { config } from "../config";
 import { logger } from "../utils/logger";
 
+// Extended Exchange (StarkNet): https://api.docs.extended.exchange
+// Base URL: https://api.starknet.extended.exchange/api/v1
+// Auth: X-Api-Key header for read-only GET requests
+// Stark signatures only needed for write operations (orders, withdrawals)
+//
+// Response wrapper: { status: "OK", data: { ... } }
+// All numeric values are strings.
+// Entry price field is "openPrice" (not entryPrice).
+// marginRatio > 1 = liquidation.
+
+interface ExtendedBalance {
+  collateralName: string;
+  balance: string;
+  equity: string;
+  availableForTrade: string;
+  availableForWithdrawal: string;
+  unrealisedPnl: string;
+  initialMargin: string;
+  marginRatio: string; // Maintenance Margin / Equity — liquidation when > 1
+  exposure: string;
+  leverage: string;
+  updatedTime: string;
+}
+
+interface ExtendedPosition {
+  market: string;
+  side: "LONG" | "SHORT";
+  leverage: string;
+  size: string;
+  openPrice: string; // entry price
+  markPrice: string;
+  liquidationPrice: string;
+  margin: string;
+  unrealisedPnl: string;
+  realisedPnl: string;
+  adl: string;
+}
+
 export class ExtendedFetcher implements ExchangeFetcher {
   name = "Extended";
   enabled: boolean;
@@ -17,7 +55,6 @@ export class ExtendedFetcher implements ExchangeFetcher {
   private get headers() {
     return {
       "X-Api-Key": config.extended.apiKey!,
-      "User-Agent": "perpdex-balance-monitor/1.0",
       Accept: "application/json",
     };
   }
@@ -25,56 +62,61 @@ export class ExtendedFetcher implements ExchangeFetcher {
   async fetchBalance(): Promise<ExchangeBalance> {
     const base = config.extended.baseUrl;
 
-    const [accountRes, positionsRes] = await Promise.all([
-      axios.get(`${base}/v1/private/account`, {
+    const [balanceRes, positionsRes] = await Promise.all([
+      axios.get<{ status: string; data: ExtendedBalance }>(`${base}/user/balance`, {
         headers: this.headers,
         timeout: 10000,
+      }).catch((err) => {
+        // 404 means zero balance, not an error
+        if (err.response?.status === 404) {
+          return { data: { status: "OK", data: null } };
+        }
+        throw err;
       }),
-      axios.get(`${base}/v1/private/positions`, {
+      axios.get<{ status: string; data: ExtendedPosition[] }>(`${base}/user/positions`, {
         headers: this.headers,
         timeout: 10000,
       }),
     ]);
 
-    const account = accountRes.data;
-    const positionsRaw = positionsRes.data?.positions ?? positionsRes.data?.results ?? positionsRes.data ?? [];
+    const bal = (balanceRes.data as { status: string; data: ExtendedBalance | null }).data;
+    const positionsRaw = positionsRes.data.data ?? [];
 
-    const totalUsd = Number(account.account_value ?? account.equity ?? account.total_equity ?? 0);
-    const freeCollateral = Number(account.free_collateral ?? account.available_balance ?? 0);
-    const marginUsed = Number(account.margin_used ?? account.initial_margin ?? 0);
-    const maintenanceMargin = Number(account.maintenance_margin ?? 0);
+    const equity = bal ? Number(bal.equity) : 0;
+    const balance = bal ? Number(bal.balance) : 0;
+    const availableForTrade = bal ? Number(bal.availableForTrade) : 0;
+    const initialMargin = bal ? Number(bal.initialMargin) : 0;
+    const marginRatio = bal ? Number(bal.marginRatio) : 0;
+    const unrealisedPnlTotal = bal ? Number(bal.unrealisedPnl) : 0;
 
-    // marginFreePercent = ((equity - maintenance_margin) / equity) * 100
-    const marginFreePercent =
-      totalUsd > 0 ? ((totalUsd - maintenanceMargin) / totalUsd) * 100 : 100;
+    // marginRatio = Maintenance Margin / Equity
+    // 0 = no positions, 1 = liquidation
+    // marginFreePercent = (1 - marginRatio) * 100
+    const marginFreePercent = marginRatio > 0 ? (1 - marginRatio) * 100 : 100;
 
-    const positions: Position[] = Array.isArray(positionsRaw)
-      ? positionsRaw.map((p: Record<string, unknown>) => ({
-          market: String(p.market ?? p.symbol ?? "unknown"),
-          side: Number(p.size ?? p.quantity ?? 0) >= 0 ? "long" as const : "short" as const,
-          size: Math.abs(Number(p.size ?? p.quantity ?? 0)),
-          entryPrice: Number(p.entry_price ?? p.avg_entry_price ?? 0),
-          markPrice: Number(p.mark_price ?? 0) || undefined,
-          unrealizedPnl: Number(p.unrealized_pnl ?? p.pnl ?? 0),
-          liquidationPrice: Number(p.liquidation_price ?? 0) || undefined,
-          margin: Number(p.margin ?? 0) || undefined,
-          leverage: Number(p.leverage ?? 0) || undefined,
-        }))
-      : [];
-
-    const unrealizedPnl = positions.reduce((sum, p) => sum + p.unrealizedPnl, 0);
+    const positions: Position[] = positionsRaw.map((p) => ({
+      market: p.market,
+      side: p.side === "SHORT" ? "short" as const : "long" as const,
+      size: Math.abs(Number(p.size)),
+      entryPrice: Number(p.openPrice),
+      markPrice: Number(p.markPrice) || undefined,
+      unrealizedPnl: Number(p.unrealisedPnl),
+      liquidationPrice: Number(p.liquidationPrice) || undefined,
+      margin: Number(p.margin) || undefined,
+      leverage: Number(p.leverage) || undefined,
+    }));
 
     return {
       exchange: this.name,
       timestamp: new Date().toISOString(),
-      totalUsd,
-      balance: freeCollateral,
-      marginUsed,
+      totalUsd: equity,
+      balance: availableForTrade,
+      marginUsed: initialMargin,
       marginFreePercent,
       positionCount: positions.length,
-      unrealizedPnl,
+      unrealizedPnl: unrealisedPnlTotal,
       positions,
-      raw: account,
+      raw: (bal ?? {}) as unknown as Record<string, unknown>,
     };
   }
 }
