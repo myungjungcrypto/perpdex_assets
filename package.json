@@ -9,15 +9,16 @@
     "dev": "ts-node src/index.ts"
   },
   "dependencies": {
+    "@n1xyz/nord-ts": "^0.3.5",
+    "@solana/web3.js": "^1.95.0",
     "axios": "^1.7.0",
     "dotenv": "^16.4.0",
     "ethers": "^6.13.0",
-    "googleapis": "^144.0.0",
-    "@solana/web3.js": "^1.95.0"
+    "googleapis": "^144.0.0"
   },
   "devDependencies": {
     "@types/node": "^20.14.0",
-    "typescript": "^5.5.0",
-    "ts-node": "^10.9.0"
+    "ts-node": "^10.9.0",
+    "typescript": "^5.5.0"
   }
 }

@@ -1,39 +1,35 @@
-import axios from "axios";
+import { Connection } from "@solana/web3.js";
+import { Nord } from "@n1xyz/nord-ts";
 import { ExchangeBalance, ExchangeFetcher, Position } from "./types";
 import { config } from "../config";
 import { logger } from "../utils/logger";
 
-// 01 Exchange (zo protocol) — non-custodial Solana DEX
-// Requires running local REST service (zo-ts-rest-api) at localhost:3000
-// OR using zo-client SDK for direct on-chain reads.
+// 01 Exchange — runs on N1 blockchain (migrated from Solana in 2025)
+// Uses Nord SDK for read-only balance queries.
+// Only wallet public address needed — no private key required.
 //
-// Response format: { success: true, result: { ... } }
-// All field names are camelCase (FTX-style).
-// Read-only endpoints (GET /account, /positions, /wallet/balances)
-// don't need signing — they read on-chain state for the configured wallet.
+// Flow: getUser(pubkey) → accountIds → getAccount(id) → balances/positions/margins
+//
+// Margin fields (all in USD):
+//   mf  = margin fraction value
+//   mmf = maintenance margin fraction value
+//   pon = position notional (open position + order size)
+//   bankruptcy = true if account can't cover debt
+//   Liquidation when mf <= mmf
 
-interface O1AccountResult {
-  collateral: number;
-  freeCollateral: number;
-  initialMarginRequirement: number;
-  maintenanceMarginRequirement: number;
-  marginFraction: number;
-  openMarginFraction: number;
-  totalAccountValue: number;
-  totalPositionSize: number;
-  liquidating: boolean;
-  positions: O1Position[];
-}
+let nordInstance: Nord | null = null;
 
-interface O1Position {
-  future: string;
-  side: "buy" | "sell";
-  size: number;
-  netSize: number;
-  entryPrice: number;
-  unrealizedPnl: number;
-  cost: number;
-  collateralUsed: number;
+async function getNord(): Promise<Nord> {
+  if (nordInstance) return nordInstance;
+
+  const connection = new Connection(config.o1.solanaRpcUrl);
+  nordInstance = await Nord.new({
+    webServerUrl: config.o1.webServerUrl,
+    app: config.o1.appKey,
+    solanaConnection: connection,
+    initWebSockets: false,
+  });
+  return nordInstance;
 }
 
 export class O1ExchangeFetcher implements ExchangeFetcher {
@@ -41,65 +37,105 @@ export class O1ExchangeFetcher implements ExchangeFetcher {
   enabled: boolean;
 
   constructor() {
-    // For the local REST service, just needs the base URL to be configured
-    // The keypair is configured in the REST service's environment, not here
-    this.enabled = !!config.o1.solanaKeypair || !!config.o1.baseUrl;
+    this.enabled = !!config.o1.walletAddress;
     if (!this.enabled) {
-      logger.warn("01 Exchange: not configured — skipping");
+      logger.warn("01 Exchange: wallet address not set — skipping");
     }
   }
 
   async fetchBalance(): Promise<ExchangeBalance> {
-    const base = config.o1.baseUrl;
+    const nord = await getNord();
+    const walletAddress = config.o1.walletAddress!;
 
-    // Local REST service uses its configured keypair internally
-    const res = await axios.get<{ success: boolean; result: O1AccountResult }>(
-      `${base}/account`,
-      { timeout: 10000 }
+    // Get user account IDs by public key (read-only, no signing needed)
+    const user = await nord.getUser({ pubkey: walletAddress });
+    if (!user || user.accountIds.length === 0) {
+      logger.info("01Exchange: no account found for wallet");
+      return this.zeroBalance();
+    }
+
+    // Get account details for primary account
+    const account = await nord.getAccount(user.accountIds[0]);
+
+    // Sum balances (USDC is typically tokenId 0)
+    const usdcBalance = account.balances
+      .filter((b) => b.token === "USDC" || b.tokenId === 0)
+      .reduce((sum, b) => sum + b.amount, 0);
+
+    // Build market ID → symbol map
+    const marketMap = new Map<number, string>();
+    for (const m of nord.markets) {
+      marketMap.set(m.marketId, m.symbol);
+    }
+
+    // Parse perp positions
+    const positions: Position[] = account.positions
+      .filter((p) => p.perp && p.perp.baseSize !== 0)
+      .map((p) => {
+        const perp = p.perp!;
+        const unrealizedPnl = perp.sizePricePnl + perp.fundingPaymentPnl;
+
+        return {
+          market: marketMap.get(p.marketId) ?? `market-${p.marketId}`,
+          side: perp.isLong ? ("long" as const) : ("short" as const),
+          size: Math.abs(perp.baseSize),
+          entryPrice: perp.price,
+          unrealizedPnl,
+        };
+      });
+
+    const unrealizedPnl = positions.reduce(
+      (sum, p) => sum + p.unrealizedPnl,
+      0
     );
+    const totalUsd = usdcBalance + unrealizedPnl;
 
-    if (!res.data.success) {
-      throw new Error("01 Exchange: account request failed");
-    }
-
-    const account = res.data.result;
-
-    const totalUsd = account.totalAccountValue;
-    const freeCollateral = account.freeCollateral;
-    const marginUsed = account.collateral - freeCollateral;
-
+    // Margin health from AccountMarginsView
+    const margins = account.margins;
     let marginFreePercent = 100;
-    if (account.maintenanceMarginRequirement > 0 && account.marginFraction > 0) {
-      marginFreePercent =
-        ((account.marginFraction - account.maintenanceMarginRequirement) /
-          account.marginFraction) *
-        100;
+    let marginUsed = 0;
+
+    if (margins.pon > 0 && margins.mf > 0) {
+      marginUsed = margins.pon;
+      // mf = margin fraction, mmf = maintenance margin fraction
+      // Liquidation when mf <= mmf, so (1 - mmf/mf) * 100 = distance from liquidation
+      const marginRatio = margins.mmf / margins.mf;
+      marginFreePercent = (1 - marginRatio) * 100;
     }
-    if (account.liquidating) {
+
+    if (margins.bankruptcy) {
       marginFreePercent = 0;
     }
-
-    const positions: Position[] = (account.positions ?? []).map((p) => ({
-      market: p.future,
-      side: p.netSize >= 0 ? ("long" as const) : ("short" as const),
-      size: Math.abs(p.netSize),
-      entryPrice: p.entryPrice,
-      unrealizedPnl: p.unrealizedPnl,
-    }));
-
-    const unrealizedPnl = positions.reduce((sum, p) => sum + p.unrealizedPnl, 0);
 
     return {
       exchange: this.name,
       timestamp: new Date().toISOString(),
       totalUsd,
-      balance: freeCollateral,
+      balance: usdcBalance,
       marginUsed,
       marginFreePercent,
       positionCount: positions.length,
       unrealizedPnl,
       positions,
-      raw: account as unknown as Record<string, unknown>,
+      raw: { margins, balances: account.balances } as unknown as Record<
+        string,
+        unknown
+      >,
+    };
+  }
+
+  private zeroBalance(): ExchangeBalance {
+    return {
+      exchange: this.name,
+      timestamp: new Date().toISOString(),
+      totalUsd: 0,
+      balance: 0,
+      marginUsed: 0,
+      marginFreePercent: 100,
+      positionCount: 0,
+      unrealizedPnl: 0,
+      positions: [],
+      raw: {},
     };
   }
 }

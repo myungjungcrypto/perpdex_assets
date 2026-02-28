@@ -59,10 +59,12 @@ export const config = {
     gatewayUrl: env("NADO_GATEWAY_URL", "https://gateway.prod.nado.xyz/v1"),
   },
 
-  // 01 Exchange
+  // 01 Exchange (N1 / Nord)
   o1: {
-    solanaKeypair: optEnv("O1_SOLANA_KEYPAIR"),
-    baseUrl: env("O1_BASE_URL", "http://localhost:3000"),
+    walletAddress: optEnv("O1_WALLET_ADDRESS"),
+    webServerUrl: env("O1_WEB_SERVER_URL", "https://zo-mainnet.n1.xyz"),
+    appKey: env("O1_APP_KEY", "zoau54n5U24GHNKqyoziVaVxgsiQYnPMx33fKmLLCT5"),
+    solanaRpcUrl: env("O1_SOLANA_RPC_URL", "https://api.mainnet-beta.solana.com"),
   },
 
   // Variational
