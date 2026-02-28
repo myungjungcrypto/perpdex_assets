@@ -69,9 +69,10 @@ export class O1ExchangeFetcher implements ExchangeFetcher {
     const account = await nord.getAccount(user.accountIds[0]);
 
     // Sum balances (USDC is typically tokenId 0)
-    const usdcBalance = account.balances
+    const balances: Array<{ token?: string; tokenId?: number; amount: number }> = account.balances ?? [];
+    const usdcBalance = balances
       .filter((b) => b.token === "USDC" || b.tokenId === 0)
-      .reduce((sum, b) => sum + b.amount, 0);
+      .reduce((sum: number, b) => sum + b.amount, 0);
 
     // Build market ID → symbol map
     const marketMap = new Map<number, string>();
@@ -80,9 +81,11 @@ export class O1ExchangeFetcher implements ExchangeFetcher {
     }
 
     // Parse perp positions
-    const positions: Position[] = account.positions
-      .filter((p) => p.perp && p.perp.baseSize !== 0)
-      .map((p) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const rawPositions: any[] = account.positions ?? [];
+    const positions: Position[] = rawPositions
+      .filter((p: any) => p.perp && p.perp.baseSize !== 0)
+      .map((p: any) => {
         const perp = p.perp!;
         const unrealizedPnl = perp.sizePricePnl + perp.fundingPaymentPnl;
 
