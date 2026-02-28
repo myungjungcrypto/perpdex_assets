@@ -79,34 +79,35 @@ export class LighterFetcher implements ExchangeFetcher {
     }
 
     const collateral = Number(account.collateral ?? 0);
+    const availableBalance = Number(account.available_balance ?? 0);
+    const totalAssetValue = Number(account.total_asset_value ?? 0);
     const positionsRaw: LighterPosition[] = account.positions ?? [];
 
-    // Calculate portfolio value from collateral + unrealized PnL
+    // Filter out zero-size positions and calculate unrealized PnL
     let totalUnrealizedPnl = 0;
-    const positions: Position[] = positionsRaw.map((p) => {
-      const pnl = Number(p.unrealized_pnl ?? 0);
-      totalUnrealizedPnl += pnl;
-      return {
-        market: p.symbol ?? `market-${p.market_id}`,
-        side: p.sign >= 0 ? "long" as const : "short" as const,
-        size: Math.abs(Number(p.position)),
-        entryPrice: Number(p.avg_entry_price),
-        unrealizedPnl: pnl,
-        liquidationPrice: Number(p.liquidation_price) || undefined,
-        leverage: p.initial_margin_fraction
-          ? 1 / Number(p.initial_margin_fraction)
-          : undefined,
-      };
-    });
+    const positions: Position[] = positionsRaw
+      .filter((p) => Math.abs(Number(p.position)) > 0)
+      .map((p) => {
+        const pnl = Number(p.unrealized_pnl ?? 0);
+        totalUnrealizedPnl += pnl;
+        return {
+          market: p.symbol ?? `market-${p.market_id}`,
+          side: p.sign >= 0 ? "long" as const : "short" as const,
+          size: Math.abs(Number(p.position)),
+          entryPrice: Number(p.avg_entry_price),
+          unrealizedPnl: pnl,
+          liquidationPrice: Number(p.liquidation_price) || undefined,
+          leverage: p.initial_margin_fraction
+            ? 1 / Number(p.initial_margin_fraction)
+            : undefined,
+        };
+      });
 
-    const totalUsd = collateral + totalUnrealizedPnl;
-    const marginUsed = positionsRaw.reduce(
-      (sum, p) =>
-        sum + Math.abs(Number(p.position_value ?? 0)) * Number(p.initial_margin_fraction ?? 0.1),
-      0
-    );
+    // Use API-provided values directly instead of manual calculation
+    const totalUsd = totalAssetValue > 0 ? totalAssetValue : collateral + totalUnrealizedPnl;
+    const marginUsed = totalUsd - availableBalance;
     const marginFreePercent =
-      totalUsd > 0 ? ((totalUsd - marginUsed) / totalUsd) * 100 : 100;
+      totalUsd > 0 ? (availableBalance / totalUsd) * 100 : 100;
 
     return {
       exchange: this.name,

@@ -74,25 +74,43 @@ export class NadoFetcher implements ExchangeFetcher {
       throw new Error("Nado: subaccount does not exist");
     }
 
-    const health: SubaccountHealth = data.health;
+    // Nado (Vertex fork) may return health as:
+    // - data.health = { assets, liabilities, initial_health, maintenance_health }
+    // - data.healths = [{ health_type: "initial", assets, liabilities }, ...]
+    let assets = 0;
+    let initialHealth = 0;
+    let maintenanceHealth = 0;
+
+    if (data.health) {
+      assets = Number(data.health.assets) / X18;
+      initialHealth = Number(data.health.initial_health) / X18;
+      maintenanceHealth = Number(data.health.maintenance_health) / X18;
+    } else if (Array.isArray(data.healths)) {
+      for (const h of data.healths) {
+        const hAssets = Number(h.assets ?? 0) / X18;
+        const hLiabilities = Number(h.liabilities ?? 0) / X18;
+        if (h.health_type === "initial") {
+          assets = hAssets;
+          initialHealth = hAssets - hLiabilities;
+        } else if (h.health_type === "maintenance") {
+          maintenanceHealth = hAssets - hLiabilities;
+        }
+      }
+    } else {
+      logger.warn("Nado: unexpected response structure, keys: " + Object.keys(data).join(", "));
+    }
+
     const spotBalances: SpotBalance[] = data.spot_balances ?? [];
     const perpBalances: PerpBalance[] = data.perp_balances ?? [];
 
-    const assets = Number(health.assets) / X18;
-    const liabilities = Number(health.liabilities) / X18;
-    const initialHealth = Number(health.initial_health) / X18;
-    const maintenanceHealth = Number(health.maintenance_health) / X18;
-
-    // Total equity = assets (collateral + position values)
+    // Total equity = assets
     const totalUsd = assets;
     // Free collateral ~ initial_health (positive means available margin)
-    const balance = Math.max(initialHealth, 0);
-    const marginUsed = assets - balance;
+    const freeMargin = Math.max(initialHealth, 0);
+    const marginUsed = totalUsd - freeMargin;
 
-    // maintenance_health > 0 means safe
-    // marginFreePercent = (maintenance_health / assets) * 100
     const marginFreePercent =
-      assets > 0 ? (maintenanceHealth / assets) * 100 : 100;
+      totalUsd > 0 ? (freeMargin / totalUsd) * 100 : 100;
 
     // USDC is product_id 0 typically
     const usdcBalance = spotBalances.find((b) => b.product_id === 0);

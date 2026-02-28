@@ -63,9 +63,17 @@ export class PacificaFetcher implements ExchangeFetcher {
       }),
     ]);
 
-    const account = accountRes.data.data[0];
+    const accountData = accountRes.data;
+    const account = Array.isArray(accountData.data)
+      ? accountData.data[0]
+      : accountData.data;
     if (!account) {
-      throw new Error("Pacifica: no account data returned");
+      // Log the response shape to help debug
+      const keys = Object.keys(accountData);
+      const dataType = typeof accountData.data;
+      throw new Error(
+        `Pacifica: no account data returned (keys: ${keys.join(",")}, data type: ${dataType}, success: ${accountData.success})`
+      );
     }
     const positionsRaw = positionsRes.data.data ?? [];
 
