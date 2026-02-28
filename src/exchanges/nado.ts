@@ -68,9 +68,20 @@ export class NadoFetcher implements ExchangeFetcher {
       timeout: 10000,
     });
 
-    const data = res.data?.data ?? res.data;
+    const raw = res.data;
+    // Nado may nest the response under "data" or return it directly
+    // Try multiple unwrap levels to find the actual subaccount data
+    const data = raw?.data?.data ?? raw?.data ?? raw;
 
-    if (!data || !data.exists) {
+    logger.info(`Nado: raw response keys: ${JSON.stringify(Object.keys(raw ?? {}))}`);
+    if (raw?.data) {
+      logger.info(`Nado: raw.data keys: ${JSON.stringify(Object.keys(raw.data))}`);
+      if (raw.data.data) {
+        logger.info(`Nado: raw.data.data keys: ${JSON.stringify(Object.keys(raw.data.data))}`);
+      }
+    }
+
+    if (!data || (data.exists !== undefined && !data.exists)) {
       throw new Error("Nado: subaccount does not exist");
     }
 
@@ -82,10 +93,12 @@ export class NadoFetcher implements ExchangeFetcher {
     let maintenanceHealth = 0;
 
     if (data.health) {
+      logger.info(`Nado: health object: ${JSON.stringify(data.health)}`);
       assets = Number(data.health.assets) / X18;
       initialHealth = Number(data.health.initial_health) / X18;
       maintenanceHealth = Number(data.health.maintenance_health) / X18;
     } else if (Array.isArray(data.healths)) {
+      logger.info(`Nado: healths array (${data.healths.length} items): ${JSON.stringify(data.healths)}`);
       for (const h of data.healths) {
         const hAssets = Number(h.assets ?? 0) / X18;
         const hLiabilities = Number(h.liabilities ?? 0) / X18;
@@ -97,8 +110,16 @@ export class NadoFetcher implements ExchangeFetcher {
         }
       }
     } else {
-      logger.warn("Nado: unexpected response structure, keys: " + Object.keys(data).join(", "));
+      logger.warn("Nado: no health/healths found. Data keys: " + Object.keys(data).join(", "));
+      // Dump first level of all data for debugging
+      for (const key of Object.keys(data)) {
+        const val = data[key];
+        const preview = typeof val === "object" ? JSON.stringify(val).slice(0, 200) : String(val);
+        logger.warn(`Nado:   data.${key} = ${preview}`);
+      }
     }
+
+    logger.info(`Nado: parsed assets=${assets}, initialHealth=${initialHealth}, maintenanceHealth=${maintenanceHealth}`);
 
     const spotBalances: SpotBalance[] = data.spot_balances ?? [];
     const perpBalances: PerpBalance[] = data.perp_balances ?? [];

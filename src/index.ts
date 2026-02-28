@@ -7,7 +7,7 @@ import { PacificaFetcher } from "./exchanges/pacifica";
 import { NadoFetcher } from "./exchanges/nado";
 import { O1ExchangeFetcher } from "./exchanges/o1exchange";
 import { VariationalFetcher } from "./exchanges/variational";
-import { appendBalanceLog, appendSummary, ensureSheetHeaders } from "./services/google-sheets";
+import { updateBalanceLog, appendSummary, ensureSheetHeaders } from "./services/google-sheets";
 import { sendAlerts, sendStartupMessage } from "./services/telegram";
 import { analyzeAll } from "./services/risk-analyzer";
 import { logger } from "./utils/logger";
@@ -65,7 +65,7 @@ async function run(): Promise<void> {
 
   // Write to Google Sheets
   try {
-    await appendBalanceLog(balances);
+    await updateBalanceLog(balances);
   } catch (err) {
     logger.error("Google Sheets Balance Log write failed", err);
   }

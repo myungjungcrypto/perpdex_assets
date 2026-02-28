@@ -18,31 +18,55 @@ function getClient(): sheets_v4.Sheets {
   return sheetsClient;
 }
 
-export async function appendBalanceLog(
+// Fixed row assignments for each exchange in Balance Log.
+// Row 1 = headers, Row 2 = Paradex, Row 3 = Lighter, etc.
+// This allows other sheets to reference fixed cells like ='Balance Log'!C2
+const EXCHANGE_ROW: Record<string, number> = {
+  Paradex: 2,
+  Lighter: 3,
+  Extended: 4,
+  Pacifica: 5,
+  Nado: 6,
+  "01Exchange": 7,
+  Variational: 8,
+};
+
+export async function updateBalanceLog(
   balances: ExchangeBalance[]
 ): Promise<void> {
   const sheets = getClient();
-  const rows = balances.map((b) => [
-    b.timestamp,
-    b.exchange,
-    b.totalUsd.toFixed(2),
-    b.balance.toFixed(2),
-    b.marginUsed.toFixed(2),
-    `${b.marginFreePercent.toFixed(1)}%`,
-    b.positionCount,
-    b.unrealizedPnl.toFixed(2),
-  ]);
+  const sheetName = config.google.balanceLogSheet;
+
+  const requests = balances.map((b) => {
+    const row = EXCHANGE_ROW[b.exchange];
+    if (!row) {
+      logger.warn(`Balance Log: unknown exchange "${b.exchange}", skipping`);
+      return null;
+    }
+    return sheets.spreadsheets.values.update({
+      spreadsheetId: config.google.spreadsheetId,
+      range: `${sheetName}!A${row}:H${row}`,
+      valueInputOption: "USER_ENTERED",
+      requestBody: {
+        values: [[
+          b.timestamp,
+          b.exchange,
+          b.totalUsd.toFixed(2),
+          b.balance.toFixed(2),
+          b.marginUsed.toFixed(2),
+          `${b.marginFreePercent.toFixed(1)}%`,
+          b.positionCount,
+          b.unrealizedPnl.toFixed(2),
+        ]],
+      },
+    });
+  }).filter(Boolean);
 
   try {
-    await sheets.spreadsheets.values.append({
-      spreadsheetId: config.google.spreadsheetId,
-      range: `${config.google.balanceLogSheet}!A:H`,
-      valueInputOption: "USER_ENTERED",
-      requestBody: { values: rows },
-    });
-    logger.info(`Wrote ${rows.length} rows to Balance Log`);
+    await Promise.all(requests);
+    logger.info(`Updated ${requests.length} rows in Balance Log (overwrite)`);
   } catch (err) {
-    logger.error("Failed to write Balance Log", err);
+    logger.error("Failed to update Balance Log", err);
     throw err;
   }
 }
