@@ -73,53 +73,51 @@ export class NadoFetcher implements ExchangeFetcher {
     // Try multiple unwrap levels to find the actual subaccount data
     const data = raw?.data?.data ?? raw?.data ?? raw;
 
-    logger.info(`Nado: raw response keys: ${JSON.stringify(Object.keys(raw ?? {}))}`);
-    if (raw?.data) {
-      logger.info(`Nado: raw.data keys: ${JSON.stringify(Object.keys(raw.data))}`);
-      if (raw.data.data) {
-        logger.info(`Nado: raw.data.data keys: ${JSON.stringify(Object.keys(raw.data.data))}`);
-      }
-    }
-
     if (!data || (data.exists !== undefined && !data.exists)) {
       throw new Error("Nado: subaccount does not exist");
     }
 
-    // Nado (Vertex fork) may return health as:
+    // Nado (Vertex fork) health formats:
     // - data.health = { assets, liabilities, initial_health, maintenance_health }
-    // - data.healths = [{ health_type: "initial", assets, liabilities }, ...]
+    // - data.healths = [{ health_type, assets, liabilities }, ...]  (named)
+    // - data.healths = [{ assets, liabilities, health }, ...]       (indexed: 0=initial, 1=maintenance, 2=pnl)
     let assets = 0;
     let initialHealth = 0;
     let maintenanceHealth = 0;
 
     if (data.health) {
-      logger.info(`Nado: health object: ${JSON.stringify(data.health)}`);
       assets = Number(data.health.assets) / X18;
       initialHealth = Number(data.health.initial_health) / X18;
       maintenanceHealth = Number(data.health.maintenance_health) / X18;
-    } else if (Array.isArray(data.healths)) {
-      logger.info(`Nado: healths array (${data.healths.length} items): ${JSON.stringify(data.healths)}`);
-      for (const h of data.healths) {
-        const hAssets = Number(h.assets ?? 0) / X18;
-        const hLiabilities = Number(h.liabilities ?? 0) / X18;
-        if (h.health_type === "initial") {
-          assets = hAssets;
-          initialHealth = hAssets - hLiabilities;
-        } else if (h.health_type === "maintenance") {
-          maintenanceHealth = hAssets - hLiabilities;
+    } else if (Array.isArray(data.healths) && data.healths.length > 0) {
+      const hasType = data.healths[0].health_type !== undefined;
+      if (hasType) {
+        // Named format: { health_type: "initial"|"maintenance", assets, liabilities }
+        for (const h of data.healths) {
+          const hAssets = Number(h.assets ?? 0) / X18;
+          const hLiabilities = Number(h.liabilities ?? 0) / X18;
+          if (h.health_type === "initial") {
+            assets = hAssets;
+            initialHealth = hAssets - hLiabilities;
+          } else if (h.health_type === "maintenance") {
+            maintenanceHealth = hAssets - hLiabilities;
+          }
+        }
+      } else {
+        // Indexed format (Vertex style): [0]=initial, [1]=maintenance, [2]=pnl
+        // Each has { assets, liabilities, health } where health = assets - liabilities
+        const init = data.healths[0];
+        assets = Number(init.assets ?? 0) / X18;
+        initialHealth = Number(init.health ?? 0) / X18;
+        if (data.healths.length > 1) {
+          maintenanceHealth = Number(data.healths[1].health ?? 0) / X18;
         }
       }
     } else {
       logger.warn("Nado: no health/healths found. Data keys: " + Object.keys(data).join(", "));
-      // Dump first level of all data for debugging
-      for (const key of Object.keys(data)) {
-        const val = data[key];
-        const preview = typeof val === "object" ? JSON.stringify(val).slice(0, 200) : String(val);
-        logger.warn(`Nado:   data.${key} = ${preview}`);
-      }
     }
 
-    logger.info(`Nado: parsed assets=${assets}, initialHealth=${initialHealth}, maintenanceHealth=${maintenanceHealth}`);
+    logger.info(`Nado: parsed assets=${assets.toFixed(2)}, initialHealth=${initialHealth.toFixed(2)}`);
 
     const spotBalances: SpotBalance[] = data.spot_balances ?? [];
     const perpBalances: PerpBalance[] = data.perp_balances ?? [];
