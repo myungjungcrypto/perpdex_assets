@@ -1,5 +1,5 @@
 import dotenv from "dotenv";
-dotenv.config();
+dotenv.config({ path: process.env.ENV_FILE || ".env" });
 
 function env(key: string, fallback?: string): string {
   const val = process.env[key] ?? fallback;
