@@ -1,7 +1,7 @@
 import axios from "axios";
-import { config } from "../config";
-import { RiskAssessment, RiskLevel } from "../exchanges/types";
-import { logger } from "../utils/logger";
+import { config } from "../config.js";
+import { RiskAssessment, RiskLevel } from "../exchanges/types.js";
+import { logger } from "../utils/logger.js";
 
 const LEVEL_EMOJI: Record<RiskLevel, string> = {
   safe: "",

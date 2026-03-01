@@ -1,16 +1,16 @@
-import { config } from "./config";
-import { ExchangeBalance, ExchangeFetcher } from "./exchanges/types";
-import { ParadexFetcher } from "./exchanges/paradex";
-import { LighterFetcher } from "./exchanges/lighter";
-import { ExtendedFetcher } from "./exchanges/extended";
-import { PacificaFetcher } from "./exchanges/pacifica";
-import { NadoFetcher } from "./exchanges/nado";
-import { O1ExchangeFetcher } from "./exchanges/o1exchange";
-import { VariationalFetcher } from "./exchanges/variational";
-import { updateBalanceLog, appendSummary, ensureSheetHeaders } from "./services/google-sheets";
-import { sendAlerts, sendStartupMessage } from "./services/telegram";
-import { analyzeAll } from "./services/risk-analyzer";
-import { logger } from "./utils/logger";
+import { config } from "./config.js";
+import { ExchangeBalance, ExchangeFetcher } from "./exchanges/types.js";
+import { ParadexFetcher } from "./exchanges/paradex.js";
+import { LighterFetcher } from "./exchanges/lighter.js";
+import { ExtendedFetcher } from "./exchanges/extended.js";
+import { PacificaFetcher } from "./exchanges/pacifica.js";
+import { NadoFetcher } from "./exchanges/nado.js";
+import { O1ExchangeFetcher } from "./exchanges/o1exchange.js";
+import { VariationalFetcher } from "./exchanges/variational.js";
+import { updateBalanceLog, appendSummary, ensureSheetHeaders } from "./services/google-sheets.js";
+import { sendAlerts, sendStartupMessage } from "./services/telegram.js";
+import { analyzeAll } from "./services/risk-analyzer.js";
+import { logger } from "./utils/logger.js";
 
 const CYCLE_INTERVAL_MS = Number(process.env.CYCLE_INTERVAL_MS ?? 60_000); // default 1 min
 

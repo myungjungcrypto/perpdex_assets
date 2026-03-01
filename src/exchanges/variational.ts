@@ -1,6 +1,6 @@
-import { ExchangeBalance, ExchangeFetcher } from "./types";
-import { config } from "../config";
-import { logger } from "../utils/logger";
+import { ExchangeBalance, ExchangeFetcher } from "./types.js";
+import { config } from "../config.js";
+import { logger } from "../utils/logger.js";
 
 // Variational API is not yet publicly available.
 // This placeholder will be updated once the API is released.

@@ -1,5 +1,5 @@
-import { config } from "../config";
-import { ExchangeBalance, RiskAssessment, RiskLevel } from "../exchanges/types";
+import { config } from "../config.js";
+import { ExchangeBalance, RiskAssessment, RiskLevel } from "../exchanges/types.js";
 
 export function analyzeRisk(balance: ExchangeBalance): RiskAssessment {
   const pct = balance.marginFreePercent;

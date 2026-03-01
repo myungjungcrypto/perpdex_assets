@@ -1,7 +1,7 @@
 import axios from "axios";
-import { ExchangeBalance, ExchangeFetcher, Position } from "./types";
-import { config } from "../config";
-import { logger } from "../utils/logger";
+import { ExchangeBalance, ExchangeFetcher, Position } from "./types.js";
+import { config } from "../config.js";
+import { logger } from "../utils/logger.js";
 
 // Extended Exchange (StarkNet): https://api.docs.extended.exchange
 // Base URL: https://api.starknet.extended.exchange/api/v1

@@ -1,8 +1,8 @@
 import { Connection } from "@solana/web3.js";
 import { Nord } from "@n1xyz/nord-ts";
-import { ExchangeBalance, ExchangeFetcher, Position } from "./types";
-import { config } from "../config";
-import { logger } from "../utils/logger";
+import { ExchangeBalance, ExchangeFetcher, Position } from "./types.js";
+import { config } from "../config.js";
+import { logger } from "../utils/logger.js";
 
 // 01 Exchange — runs on N1 blockchain (migrated from Solana in 2025)
 // Uses Nord SDK for read-only balance queries.

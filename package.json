@@ -2,6 +2,7 @@
   "name": "perpdex-balance-monitor",
   "version": "1.0.0",
   "description": "Monitor balances across 7 perp DEXes, log to Google Sheets, alert via Telegram",
+  "type": "module",
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc",

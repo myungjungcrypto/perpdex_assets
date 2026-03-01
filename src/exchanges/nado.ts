@@ -1,7 +1,7 @@
 import axios from "axios";
-import { ExchangeBalance, ExchangeFetcher, Position } from "./types";
-import { config } from "../config";
-import { logger } from "../utils/logger";
+import { ExchangeBalance, ExchangeFetcher, Position } from "./types.js";
+import { config } from "../config.js";
+import { logger } from "../utils/logger.js";
 
 // Nado API: https://docs.nado.xyz/developer-resources/api
 // Gateway queries are read-only and do NOT require EIP-712 signing.

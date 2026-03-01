@@ -1,7 +1,7 @@
 import { google, sheets_v4 } from "googleapis";
-import { config } from "../config";
-import { ExchangeBalance } from "../exchanges/types";
-import { logger } from "../utils/logger";
+import { config } from "../config.js";
+import { ExchangeBalance } from "../exchanges/types.js";
+import { logger } from "../utils/logger.js";
 
 let sheetsClient: sheets_v4.Sheets | null = null;
 
