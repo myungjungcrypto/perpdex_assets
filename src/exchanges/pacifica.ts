@@ -37,18 +37,21 @@ interface PacificaPosition {
 }
 
 export class PacificaFetcher implements ExchangeFetcher {
-  name = "Pacifica";
+  name: string;
   enabled: boolean;
+  private readonly walletAddress: string;
 
-  constructor() {
-    this.enabled = !!config.pacifica.walletAddress;
+  constructor(address?: string, label?: string) {
+    this.walletAddress = address ?? "";
+    this.enabled = !!this.walletAddress;
+    this.name = label ?? "Pacifica";
     if (!this.enabled) {
-      logger.warn("Pacifica: wallet address not set — skipping");
+      logger.warn(`${this.name}: wallet address not set — skipping`);
     }
   }
 
   async fetchBalance(): Promise<ExchangeBalance> {
-    const addr = config.pacifica.walletAddress!;
+    const addr = this.walletAddress;
     const base = config.pacifica.baseUrl;
 
     // GET requests don't require authentication — wallet address is sufficient

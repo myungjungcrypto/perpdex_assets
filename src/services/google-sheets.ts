@@ -8,6 +8,10 @@ let sheetsClient: sheets_v4.Sheets | null = null;
 function getClient(): sheets_v4.Sheets {
   if (sheetsClient) return sheetsClient;
 
+  if (!config.google.serviceAccountJson || !config.google.spreadsheetId) {
+    throw new Error("Google Sheets not configured");
+  }
+
   const credentials = JSON.parse(config.google.serviceAccountJson);
   const auth = new google.auth.GoogleAuth({
     credentials,
@@ -34,6 +38,7 @@ const EXCHANGE_ROW: Record<string, number> = {
 export async function updateBalanceLog(
   balances: ExchangeBalance[]
 ): Promise<void> {
+  if (!config.google.enabled) return;
   const sheets = getClient();
   const sheetName = config.google.balanceLogSheet;
 
@@ -75,6 +80,7 @@ export async function appendSummary(
   balances: ExchangeBalance[],
   alertExchanges: string[]
 ): Promise<void> {
+  if (!config.google.enabled) return;
   const sheets = getClient();
   const now = balances[0]?.timestamp ?? new Date().toISOString();
   const totalAll = balances.reduce((sum, b) => sum + b.totalUsd, 0);
@@ -116,6 +122,10 @@ export async function appendSummary(
 }
 
 export async function ensureSheetHeaders(): Promise<void> {
+  if (!config.google.enabled) {
+    logger.info("Google Sheets not configured — skipping");
+    return;
+  }
   const sheets = getClient();
   const spreadsheetId = config.google.spreadsheetId;
 

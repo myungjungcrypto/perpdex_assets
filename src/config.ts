@@ -14,10 +14,13 @@ function optEnv(key: string): string | undefined {
 }
 
 export const config = {
-  // Google Sheets
+  // Google Sheets (optional — omit credentials to disable)
   google: {
-    serviceAccountJson: env("GOOGLE_SERVICE_ACCOUNT_JSON"),
-    spreadsheetId: env("GOOGLE_SPREADSHEET_ID"),
+    serviceAccountJson: optEnv("GOOGLE_SERVICE_ACCOUNT_JSON"),
+    spreadsheetId: optEnv("GOOGLE_SPREADSHEET_ID"),
+    get enabled(): boolean {
+      return !!this.serviceAccountJson && !!this.spreadsheetId;
+    },
     balanceLogSheet: env("GOOGLE_BALANCE_LOG_SHEET", "Balance Log"),
     summarySheet: env("GOOGLE_SUMMARY_SHEET", "Summary"),
   },
@@ -46,9 +49,12 @@ export const config = {
     baseUrl: env("EXTENDED_BASE_URL", "https://api.starknet.extended.exchange/api/v1"),
   },
 
-  // Pacifica
+  // Pacifica (supports comma-separated addresses: addr1,addr2)
   pacifica: {
-    walletAddress: optEnv("PACIFICA_WALLET_ADDRESS"),
+    walletAddresses: (optEnv("PACIFICA_WALLET_ADDRESS") ?? "")
+      .split(",")
+      .map((a) => a.trim())
+      .filter(Boolean),
     baseUrl: env("PACIFICA_BASE_URL", "https://api.pacifica.fi"),
   },
 

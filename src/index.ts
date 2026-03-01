@@ -14,11 +14,18 @@ import { logger } from "./utils/logger.js";
 
 const CYCLE_INTERVAL_MS = Number(process.env.CYCLE_INTERVAL_MS ?? 60_000); // default 1 min
 
+// Build Pacifica fetchers: one per wallet address (supports comma-separated)
+const pacificaAddresses = config.pacifica.walletAddresses;
+const pacificaFetchers: ExchangeFetcher[] = pacificaAddresses.map((addr, i) => {
+  const label = pacificaAddresses.length > 1 ? `Pacifica-${i + 1}` : "Pacifica";
+  return new PacificaFetcher(addr, label);
+});
+
 const fetchers: ExchangeFetcher[] = [
   new ParadexFetcher(),
   new LighterFetcher(),
   new ExtendedFetcher(),
-  new PacificaFetcher(),
+  ...pacificaFetchers,
   new NadoFetcher(),
   new O1ExchangeFetcher(),
   new VariationalFetcher(),
@@ -107,7 +114,7 @@ async function main(): Promise<void> {
   logger.info("Balance Monitor starting up...");
   logger.info(`Cycle interval: ${CYCLE_INTERVAL_MS / 1000}s`);
 
-  // Ensure sheet headers exist on first run
+  // Ensure sheet headers exist on first run (skipped if Google Sheets not configured)
   try {
     await ensureSheetHeaders();
   } catch (err) {
