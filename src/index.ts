@@ -8,7 +8,7 @@ import { NadoFetcher } from "./exchanges/nado.js";
 import { O1ExchangeFetcher } from "./exchanges/o1exchange.js";
 import { VariationalFetcher } from "./exchanges/variational.js";
 import { updateBalanceLog, appendSummary, ensureSheetHeaders } from "./services/google-sheets.js";
-import { sendAlerts, sendStartupMessage } from "./services/telegram.js";
+import { sendAlerts, sendStartupMessage, startTelegramCommandListener, StatusSnapshot } from "./services/telegram.js";
 import { analyzeAll } from "./services/risk-analyzer.js";
 import { logger } from "./utils/logger.js";
 
@@ -30,6 +30,8 @@ const fetchers: ExchangeFetcher[] = [
   new O1ExchangeFetcher(),
   new VariationalFetcher(),
 ];
+
+let latestStatus: StatusSnapshot | null = null;
 
 async function run(): Promise<void> {
   const startTime = Date.now();
@@ -68,6 +70,13 @@ async function run(): Promise<void> {
   });
 
   if (balances.length === 0) {
+    latestStatus = {
+      capturedAt: new Date().toISOString(),
+      cycleIntervalMs: CYCLE_INTERVAL_MS,
+      enabledExchanges: enabledFetchers.map((f) => f.name),
+      balances: [],
+      failedExchanges: [...errors],
+    };
     logger.error("All exchanges failed. Skipping sheets update.");
     return;
   }
@@ -84,6 +93,21 @@ async function run(): Promise<void> {
   const alertExchanges = assessments
     .filter((a) => a.level !== "safe")
     .map((a) => `${a.exchange}(${a.level})`);
+  const riskByExchange = new Map(assessments.map((a) => [a.exchange, a.level]));
+
+  latestStatus = {
+    capturedAt: new Date().toISOString(),
+    cycleIntervalMs: CYCLE_INTERVAL_MS,
+    enabledExchanges: enabledFetchers.map((f) => f.name),
+    balances: balances.map((b) => ({
+      exchange: b.exchange,
+      totalUsd: b.totalUsd,
+      marginFreePercent: b.marginFreePercent,
+      positionCount: b.positionCount,
+      riskLevel: riskByExchange.get(b.exchange) ?? "safe",
+    })),
+    failedExchanges: [...errors],
+  };
 
   // Write summary
   try {
@@ -109,6 +133,7 @@ async function run(): Promise<void> {
 }
 
 let intervalId: ReturnType<typeof setInterval> | null = null;
+let stopTelegramCommandListener: (() => void) | null = null;
 
 async function main(): Promise<void> {
   logger.info("Balance Monitor starting up...");
@@ -123,6 +148,9 @@ async function main(): Promise<void> {
 
   // Send startup notification
   await sendStartupMessage();
+
+  // Enable Telegram command polling (/status)
+  stopTelegramCommandListener = startTelegramCommandListener(() => latestStatus);
 
   // Run immediately
   await run();
@@ -143,6 +171,7 @@ async function main(): Promise<void> {
 function shutdown(signal: string) {
   logger.info(`Received ${signal}. Shutting down...`);
   if (intervalId) clearInterval(intervalId);
+  if (stopTelegramCommandListener) stopTelegramCommandListener();
   process.exit(0);
 }
 

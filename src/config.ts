@@ -29,6 +29,7 @@ export const config = {
   telegram: {
     botToken: env("TELEGRAM_BOT_TOKEN"),
     chatId: env("TELEGRAM_CHAT_ID"),
+    commandPollIntervalMs: Number(env("TELEGRAM_COMMAND_POLL_INTERVAL_MS", "5000")),
   },
 
   // Paradex
