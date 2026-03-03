@@ -61,7 +61,13 @@ export const config = {
 
   // Nado
   nado: {
-    walletAddress: optEnv("NADO_WALLET_ADDRESS"),
+    walletAddresses: (optEnv("NADO_WALLET_ADDRESS") ?? "")
+      .split(",")
+      .map((a) => a.trim())
+      .filter(Boolean),
+    get walletAddress(): string | undefined {
+      return this.walletAddresses[0];
+    },
     linkedSignerKey: optEnv("NADO_LINKED_SIGNER_KEY"),
     gatewayUrl: env("NADO_GATEWAY_URL", "https://gateway.prod.nado.xyz/v1"),
   },

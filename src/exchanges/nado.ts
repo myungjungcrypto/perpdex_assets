@@ -41,19 +41,22 @@ interface PerpBalance {
 }
 
 export class NadoFetcher implements ExchangeFetcher {
-  name = "Nado";
+  name: string;
   enabled: boolean;
+  private readonly walletAddress: string;
 
-  constructor() {
-    this.enabled = !!config.nado.walletAddress;
+  constructor(address?: string, label?: string) {
+    this.walletAddress = address ?? "";
+    this.name = label ?? "Nado";
+    this.enabled = !!this.walletAddress;
     if (!this.enabled) {
-      logger.warn("Nado: wallet address not set — skipping");
+      logger.warn(`${this.name}: wallet address not set — skipping`);
     }
   }
 
   async fetchBalance(): Promise<ExchangeBalance> {
     const base = config.nado.gatewayUrl;
-    const subaccount = toSubaccount(config.nado.walletAddress!);
+    const subaccount = toSubaccount(this.walletAddress);
 
     // Gateway queries are read-only — no authentication needed
     const headers = {
@@ -117,7 +120,7 @@ export class NadoFetcher implements ExchangeFetcher {
       logger.warn("Nado: no health/healths found. Data keys: " + Object.keys(data).join(", "));
     }
 
-    logger.info(`Nado: parsed assets=${assets.toFixed(2)}, initialHealth=${initialHealth.toFixed(2)}`);
+    logger.info(`${this.name}: parsed assets=${assets.toFixed(2)}, initialHealth=${initialHealth.toFixed(2)}`);
 
     const spotBalances: SpotBalance[] = data.spot_balances ?? [];
     const perpBalances: PerpBalance[] = data.perp_balances ?? [];

@@ -21,12 +21,19 @@ const pacificaFetchers: ExchangeFetcher[] = pacificaAddresses.map((addr, i) => {
   return new PacificaFetcher(addr, label);
 });
 
+// Build Nado fetchers: one per wallet address (supports comma-separated)
+const nadoAddresses = config.nado.walletAddresses;
+const nadoFetchers: ExchangeFetcher[] = nadoAddresses.map((addr, i) => {
+  const label = nadoAddresses.length > 1 ? `Nado-${i + 1}` : "Nado";
+  return new NadoFetcher(addr, label);
+});
+
 const fetchers: ExchangeFetcher[] = [
   new ParadexFetcher(),
   new LighterFetcher(),
   new ExtendedFetcher(),
   ...pacificaFetchers,
-  new NadoFetcher(),
+  ...nadoFetchers,
   new O1ExchangeFetcher(),
   new VariationalFetcher(),
 ];
