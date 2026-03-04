@@ -41,6 +41,16 @@ interface TelegramUpdatesResponse {
   result: TelegramUpdate[];
 }
 
+function describeAxiosError(err: unknown): string {
+  if (axios.isAxiosError(err)) {
+    const status = err.response?.status;
+    const desc = (err.response?.data as { description?: string } | undefined)?.description;
+    return `status=${status ?? "unknown"}${desc ? ` (${desc})` : ""}`;
+  }
+  if (err instanceof Error) return err.message;
+  return String(err);
+}
+
 // In-memory cooldown tracker: exchange -> { level, lastSent }
 const cooldowns = new Map<
   string,
@@ -158,7 +168,7 @@ export async function sendAlert(assessment: RiskAssessment): Promise<void> {
 
     logger.info(`Telegram alert sent: ${assessment.exchange} [${levelLabel}]`);
   } catch (err) {
-    logger.error("Failed to send Telegram alert", err);
+    logger.error(`Failed to send Telegram alert (${describeAxiosError(err)})`);
   }
 }
 
@@ -178,7 +188,7 @@ export async function sendStartupMessage(): Promise<void> {
       `\u{2705} <b>Balance Monitor Started</b>\nMonitoring exchanges every 1 minute.`
     );
   } catch (err) {
-    logger.error("Failed to send startup message", err);
+    logger.error(`Failed to send startup message (${describeAxiosError(err)})`);
   }
 }
 
@@ -210,6 +220,7 @@ export function startTelegramCommandListener(
 ): () => void {
   let lastUpdateId = 0;
   let polling = false;
+  let warned409 = false;
   const intervalMs =
     Number.isFinite(config.telegram.commandPollIntervalMs) &&
     config.telegram.commandPollIntervalMs > 0
@@ -232,6 +243,7 @@ export function startTelegramCommandListener(
       );
 
       if (!res.data.ok) return;
+      warned409 = false;
 
       for (const update of res.data.result) {
         lastUpdateId = Math.max(lastUpdateId, update.update_id);
@@ -248,7 +260,16 @@ export function startTelegramCommandListener(
         await handleCommand(chatId, text, statusProvider);
       }
     } catch (err) {
-      logger.error("Failed to poll Telegram commands", err);
+      if (axios.isAxiosError(err) && err.response?.status === 409) {
+        if (!warned409) {
+          logger.warn(
+            "Telegram command polling conflict (409): another process is already calling getUpdates with this bot token"
+          );
+          warned409 = true;
+        }
+      } else {
+        logger.error(`Failed to poll Telegram commands (${describeAxiosError(err)})`);
+      }
     } finally {
       polling = false;
     }

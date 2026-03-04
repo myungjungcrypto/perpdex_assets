@@ -156,8 +156,12 @@ async function main(): Promise<void> {
   // Send startup notification
   await sendStartupMessage();
 
-  // Enable Telegram command polling (/status)
-  stopTelegramCommandListener = startTelegramCommandListener(() => latestStatus);
+  // Enable Telegram command polling (/status) only when explicitly enabled
+  if (config.telegram.enableCommands) {
+    stopTelegramCommandListener = startTelegramCommandListener(() => latestStatus);
+  } else {
+    logger.info("Telegram command polling disabled (set TELEGRAM_ENABLE_COMMANDS=true to enable /status)");
+  }
 
   // Run immediately
   await run();

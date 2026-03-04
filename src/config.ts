@@ -13,6 +13,12 @@ function optEnv(key: string): string | undefined {
   return process.env[key];
 }
 
+function boolEnv(key: string, fallback: boolean): boolean {
+  const val = process.env[key];
+  if (val === undefined) return fallback;
+  return ["1", "true", "yes", "on"].includes(val.toLowerCase());
+}
+
 export const config = {
   // Google Sheets (optional — omit credentials to disable)
   google: {
@@ -30,6 +36,7 @@ export const config = {
     botToken: env("TELEGRAM_BOT_TOKEN"),
     chatId: env("TELEGRAM_CHAT_ID"),
     commandPollIntervalMs: Number(env("TELEGRAM_COMMAND_POLL_INTERVAL_MS", "5000")),
+    enableCommands: boolEnv("TELEGRAM_ENABLE_COMMANDS", false),
   },
 
   // Paradex

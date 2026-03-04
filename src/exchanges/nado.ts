@@ -10,6 +10,10 @@ import { logger } from "../utils/logger.js";
 
 const X18 = 1e18;
 
+function isEvmAddress(value: string): boolean {
+  return /^0x[a-fA-F0-9]{40}$/.test(value);
+}
+
 function toSubaccount(address: string, name = "default"): string {
   // Subaccount = address (20 bytes) + name as bytes12 (UTF-8, zero-padded)
   // Nado UI and SDKs use "default" as the standard subaccount name.
@@ -51,10 +55,21 @@ export class NadoFetcher implements ExchangeFetcher {
     this.enabled = !!this.walletAddress;
     if (!this.enabled) {
       logger.warn(`${this.name}: wallet address not set — skipping`);
+      return;
+    }
+    if (!isEvmAddress(this.walletAddress)) {
+      this.enabled = false;
+      logger.warn(
+        `${this.name}: invalid wallet address format (${this.walletAddress}) — expected 0x + 40 hex chars`
+      );
     }
   }
 
   async fetchBalance(): Promise<ExchangeBalance> {
+    if (!this.enabled) {
+      throw new Error(`${this.name}: disabled`);
+    }
+
     const base = config.nado.gatewayUrl;
     const subaccount = toSubaccount(this.walletAddress);
 
@@ -65,11 +80,28 @@ export class NadoFetcher implements ExchangeFetcher {
     };
 
     // Fetch subaccount info (includes health + balances + perp positions)
-    const res = await axios.get(`${base}/query`, {
-      params: { type: "subaccount_info", subaccount },
-      headers,
-      timeout: 10000,
-    });
+    let res;
+    try {
+      res = await axios.get(`${base}/query`, {
+        params: { type: "subaccount_info", subaccount },
+        headers,
+        timeout: 10000,
+      });
+    } catch (err) {
+      if (axios.isAxiosError(err)) {
+        const status = err.response?.status ?? "unknown";
+        const description =
+          (err.response?.data as { error?: string; message?: string; detail?: string } | undefined)
+            ?.error ??
+          (err.response?.data as { error?: string; message?: string; detail?: string } | undefined)
+            ?.message ??
+          (err.response?.data as { error?: string; message?: string; detail?: string } | undefined)
+            ?.detail ??
+          "no detail";
+        throw new Error(`${this.name}: subaccount_info failed (status ${status}): ${description}`);
+      }
+      throw err;
+    }
 
     const raw = res.data;
     // Nado may nest the response under "data" or return it directly
