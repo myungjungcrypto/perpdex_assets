@@ -8,7 +8,7 @@ import { NadoFetcher } from "./exchanges/nado.js";
 import { O1ExchangeFetcher } from "./exchanges/o1exchange.js";
 import { VariationalFetcher } from "./exchanges/variational.js";
 import { updateBalanceLog, appendSummary, ensureSheetHeaders } from "./services/google-sheets.js";
-import { sendAlerts, sendStartupMessage, startTelegramCommandListener, StatusSnapshot } from "./services/telegram.js";
+import { sendAlerts, sendStartupMessage, startTelegramCommandListener, writeStatusToFile, StatusSnapshot } from "./services/telegram.js";
 import { analyzeAll } from "./services/risk-analyzer.js";
 import { logger } from "./utils/logger.js";
 
@@ -84,6 +84,7 @@ async function run(): Promise<void> {
       balances: [],
       failedExchanges: [...errors],
     };
+    writeStatusToFile(config.telegram.chatId, latestStatus);
     logger.error("All exchanges failed. Skipping sheets update.");
     return;
   }
@@ -115,6 +116,7 @@ async function run(): Promise<void> {
     })),
     failedExchanges: [...errors],
   };
+  writeStatusToFile(config.telegram.chatId, latestStatus);
 
   // Write summary
   try {
@@ -158,7 +160,7 @@ async function main(): Promise<void> {
 
   // Enable Telegram command polling (/status) only when explicitly enabled
   if (config.telegram.enableCommands) {
-    stopTelegramCommandListener = startTelegramCommandListener(() => latestStatus);
+    stopTelegramCommandListener = startTelegramCommandListener();
   } else {
     logger.info("Telegram command polling disabled (set TELEGRAM_ENABLE_COMMANDS=true to enable /status)");
   }

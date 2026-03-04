@@ -30,9 +30,16 @@ const EXCHANGE_ROW: Record<string, number> = {
   Lighter: 3,
   Extended: 4,
   Pacifica: 5,
+  "Pacifica-1": 5,
   Nado: 6,
+  "Nado-1": 6,
   "01Exchange": 7,
   Variational: 8,
+  // Multi-address overflow rows
+  "Pacifica-2": 9,
+  "Pacifica-3": 10,
+  "Nado-2": 11,
+  "Nado-3": 12,
 };
 
 export async function updateBalanceLog(
@@ -85,9 +92,11 @@ export async function appendSummary(
   const now = balances[0]?.timestamp ?? new Date().toISOString();
   const totalAll = balances.reduce((sum, b) => sum + b.totalUsd, 0);
 
+  // Map balance names: "Pacifica-1" → "Pacifica" column, "Nado-1" → "Nado" column
   const exchangeMap: Record<string, string> = {};
   for (const b of balances) {
-    exchangeMap[b.exchange] = b.totalUsd.toFixed(0);
+    const key = b.exchange.replace(/-1$/, "");
+    exchangeMap[key] = b.totalUsd.toFixed(0);
   }
 
   const exchangeOrder = [
@@ -98,6 +107,10 @@ export async function appendSummary(
     "Nado",
     "01Exchange",
     "Variational",
+    "Pacifica-2",
+    "Pacifica-3",
+    "Nado-2",
+    "Nado-3",
   ];
 
   const row = [
@@ -110,7 +123,7 @@ export async function appendSummary(
   try {
     await sheets.spreadsheets.values.append({
       spreadsheetId: config.google.spreadsheetId,
-      range: `${config.google.summarySheet}!A:J`,
+      range: `${config.google.summarySheet}!A:O`,
       valueInputOption: "USER_ENTERED",
       requestBody: { values: [row] },
     });
@@ -153,6 +166,10 @@ export async function ensureSheetHeaders(): Promise<void> {
       "Nado",
       "01Exchange",
       "Variational",
+      "Pacifica-2",
+      "Pacifica-3",
+      "Nado-2",
+      "Nado-3",
       "Alert",
     ],
   ];
@@ -200,7 +217,7 @@ export async function ensureSheetHeaders(): Promise<void> {
     if (!summaryCheck.data.values?.length) {
       await sheets.spreadsheets.values.update({
         spreadsheetId,
-        range: `${config.google.summarySheet}!A1:J1`,
+        range: `${config.google.summarySheet}!A1:N1`,
         valueInputOption: "RAW",
         requestBody: { values: summaryHeaders },
       });

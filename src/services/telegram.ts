@@ -1,7 +1,12 @@
 import axios from "axios";
+import fs from "fs";
+import path from "path";
 import { config } from "../config.js";
 import { RiskAssessment, RiskLevel } from "../exchanges/types.js";
 import { logger } from "../utils/logger.js";
+
+const STATUS_DIR = path.join(process.cwd(), "tmp");
+const LOCK_FILE = path.join(STATUS_DIR, "telegram-poll.lock");
 
 const LEVEL_EMOJI: Record<RiskLevel, string> = {
   safe: "",
@@ -26,8 +31,6 @@ export interface StatusSnapshot {
   failedExchanges: string[];
 }
 
-type StatusProvider = () => StatusSnapshot | null;
-
 interface TelegramUpdate {
   update_id: number;
   message?: {
@@ -49,6 +52,58 @@ function describeAxiosError(err: unknown): string {
   }
   if (err instanceof Error) return err.message;
   return String(err);
+}
+
+// ── File-based status sharing (multi-process safe) ──
+
+export function writeStatusToFile(chatId: string, status: StatusSnapshot): void {
+  fs.mkdirSync(STATUS_DIR, { recursive: true });
+  fs.writeFileSync(
+    path.join(STATUS_DIR, `status-${chatId}.json`),
+    JSON.stringify(status),
+  );
+}
+
+function readStatusFromFile(chatId: string | number): StatusSnapshot | null {
+  try {
+    const raw = fs.readFileSync(
+      path.join(STATUS_DIR, `status-${chatId}.json`),
+      "utf-8",
+    );
+    return JSON.parse(raw) as StatusSnapshot;
+  } catch {
+    return null;
+  }
+}
+
+function hasStatusFile(chatId: string | number): boolean {
+  return fs.existsSync(path.join(STATUS_DIR, `status-${chatId}.json`));
+}
+
+// ── PID-file lock: only one process may poll getUpdates ──
+
+function tryAcquireLock(): boolean {
+  fs.mkdirSync(STATUS_DIR, { recursive: true });
+  if (fs.existsSync(LOCK_FILE)) {
+    try {
+      const pid = parseInt(fs.readFileSync(LOCK_FILE, "utf-8").trim(), 10);
+      process.kill(pid, 0); // throws if PID is not running
+      return false;
+    } catch {
+      // stale lock — previous process died
+    }
+  }
+  fs.writeFileSync(LOCK_FILE, String(process.pid));
+  return true;
+}
+
+function releaseLock(): void {
+  try {
+    if (fs.existsSync(LOCK_FILE)) {
+      const pid = parseInt(fs.readFileSync(LOCK_FILE, "utf-8").trim(), 10);
+      if (pid === process.pid) fs.unlinkSync(LOCK_FILE);
+    }
+  } catch { /* best-effort */ }
 }
 
 // In-memory cooldown tracker: exchange -> { level, lastSent }
@@ -200,12 +255,12 @@ function normalizeCommand(text: string): string {
 async function handleCommand(
   chatId: number,
   text: string,
-  statusProvider: StatusProvider
 ): Promise<void> {
   const command = normalizeCommand(text);
 
   if (command === "/status") {
-    await sendMessage(chatId, formatStatusText(statusProvider()));
+    const status = readStatusFromFile(chatId);
+    await sendMessage(chatId, formatStatusText(status));
     logger.info(`Telegram /status served for chat ${chatId}`);
     return;
   }
@@ -215,12 +270,17 @@ async function handleCommand(
   }
 }
 
-export function startTelegramCommandListener(
-  statusProvider: StatusProvider
-): () => void {
+export function startTelegramCommandListener(): () => void {
+  // Only one process may poll getUpdates per bot token
+  if (!tryAcquireLock()) {
+    logger.info("Telegram command polling: another process holds the lock — skipping");
+    return () => {};
+  }
+
+  logger.info("Telegram command polling: acquired lock (this process is the poller)");
+
   let lastUpdateId = 0;
   let polling = false;
-  let warned409 = false;
   const intervalMs =
     Number.isFinite(config.telegram.commandPollIntervalMs) &&
     config.telegram.commandPollIntervalMs > 0
@@ -243,7 +303,6 @@ export function startTelegramCommandListener(
       );
 
       if (!res.data.ok) return;
-      warned409 = false;
 
       for (const update of res.data.result) {
         lastUpdateId = Math.max(lastUpdateId, update.update_id);
@@ -252,21 +311,20 @@ export function startTelegramCommandListener(
         const text = update.message?.text;
         if (chatId === undefined || !text) continue;
 
-        if (`${chatId}` !== config.telegram.chatId) {
-          logger.warn(`Ignoring Telegram command from unauthorized chat ${chatId}`);
+        // Accept any chatId that has a status file (= registered user)
+        if (!hasStatusFile(chatId)) {
+          logger.warn(`Ignoring Telegram command from unknown chat ${chatId}`);
           continue;
         }
 
-        await handleCommand(chatId, text, statusProvider);
+        await handleCommand(chatId, text);
       }
     } catch (err) {
       if (axios.isAxiosError(err) && err.response?.status === 409) {
-        if (!warned409) {
-          logger.warn(
-            "Telegram command polling conflict (409): another process is already calling getUpdates with this bot token"
-          );
-          warned409 = true;
-        }
+        // Lock may have been stolen by another process (e.g. after restart race)
+        logger.warn("Telegram polling 409 — releasing lock and stopping");
+        releaseLock();
+        clearInterval(timer);
       } else {
         logger.error(`Failed to poll Telegram commands (${describeAxiosError(err)})`);
       }
@@ -283,6 +341,7 @@ export function startTelegramCommandListener(
 
   return () => {
     clearInterval(timer);
-    logger.info("Telegram command polling stopped");
+    releaseLock();
+    logger.info("Telegram command polling stopped, lock released");
   };
 }
