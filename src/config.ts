@@ -104,6 +104,10 @@ export const config = {
       .map((a) => a.trim())
       .filter(Boolean),
     baseUrl: env("HYPERLIQUID_BASE_URL", "https://api.hyperliquid.xyz"),
+    hip3Dexes: (optEnv("HYPERLIQUID_HIP3_DEXES") ?? "")
+      .split(",")
+      .map((a) => a.trim())
+      .filter(Boolean),
   },
 
   // Risk thresholds

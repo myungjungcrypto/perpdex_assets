@@ -52,35 +52,32 @@ export class HyperliquidFetcher implements ExchangeFetcher {
     }
   }
 
-  async fetchBalance(): Promise<ExchangeBalance> {
+  private async fetchClearinghouseState(dex?: string): Promise<ClearinghouseState> {
     const base = config.hyperliquid.baseUrl;
-
+    const body: Record<string, string> = {
+      type: "clearinghouseState",
+      user: this.walletAddress,
+    };
+    if (dex) {
+      body.dex = dex;
+    }
     const res = await axios.post<ClearinghouseState>(
       `${base}/info`,
-      { type: "clearinghouseState", user: this.walletAddress },
+      body,
       { timeout: 10000, headers: { "Content-Type": "application/json" } },
     );
+    return res.data;
+  }
 
-    const data = res.data;
-    const margin = data.marginSummary;
-
-    const accountValue = Number(margin.accountValue);
-    const totalMarginUsed = Number(margin.totalMarginUsed);
-    const totalRawUsd = Number(margin.totalRawUsd);
-
-    const totalUsd = accountValue;
-    const balance = totalRawUsd; // cash balance (deposits - withdrawals + realized PnL)
-    const marginUsed = totalMarginUsed;
-    const freeMargin = totalUsd - marginUsed;
-    const marginFreePercent = totalUsd > 0 ? (freeMargin / totalUsd) * 100 : 100;
-
-    const positions: Position[] = data.assetPositions
+  private parsePositions(data: ClearinghouseState, dexPrefix?: string): Position[] {
+    return data.assetPositions
       .filter((ap) => Number(ap.position.szi) !== 0)
       .map((ap) => {
         const p = ap.position;
         const size = Number(p.szi);
+        const coin = dexPrefix ? `${dexPrefix}:${p.coin}` : p.coin;
         return {
-          market: p.coin,
+          market: coin,
           side: size >= 0 ? "long" as const : "short" as const,
           size: Math.abs(size),
           entryPrice: Number(p.entryPx),
@@ -91,8 +88,45 @@ export class HyperliquidFetcher implements ExchangeFetcher {
           leverage: p.leverage?.value,
         };
       });
+  }
 
-    const unrealizedPnl = positions.reduce((sum, p) => sum + p.unrealizedPnl, 0);
+  async fetchBalance(): Promise<ExchangeBalance> {
+    const hip3Dexes = config.hyperliquid.hip3Dexes;
+
+    // Fetch default perps + all HIP-3 dexes in parallel
+    const requests = [
+      this.fetchClearinghouseState(),
+      ...hip3Dexes.map((dex) => this.fetchClearinghouseState(dex)),
+    ];
+    const results = await Promise.allSettled(requests);
+
+    let totalAccountValue = 0;
+    let totalRawUsd = 0;
+    let totalMarginUsed = 0;
+    const allPositions: Position[] = [];
+
+    results.forEach((result, i) => {
+      const dexName = i === 0 ? "default" : hip3Dexes[i - 1];
+      if (result.status === "rejected") {
+        logger.warn(`${this.name}: failed to fetch dex "${dexName}" — ${result.reason}`);
+        return;
+      }
+      const data = result.value;
+      const margin = data.marginSummary;
+      totalAccountValue += Number(margin.accountValue);
+      totalRawUsd += Number(margin.totalRawUsd);
+      totalMarginUsed += Number(margin.totalMarginUsed);
+
+      const dexPrefix = i === 0 ? undefined : hip3Dexes[i - 1];
+      allPositions.push(...this.parsePositions(data, dexPrefix));
+    });
+
+    const totalUsd = totalAccountValue;
+    const balance = totalRawUsd;
+    const marginUsed = totalMarginUsed;
+    const freeMargin = totalUsd - marginUsed;
+    const marginFreePercent = totalUsd > 0 ? (freeMargin / totalUsd) * 100 : 100;
+    const unrealizedPnl = allPositions.reduce((sum, p) => sum + p.unrealizedPnl, 0);
 
     return {
       exchange: this.name,
@@ -101,10 +135,10 @@ export class HyperliquidFetcher implements ExchangeFetcher {
       balance,
       marginUsed,
       marginFreePercent,
-      positionCount: positions.length,
+      positionCount: allPositions.length,
       unrealizedPnl,
-      positions,
-      raw: data as unknown as Record<string, unknown>,
+      positions: allPositions,
+      raw: {} as Record<string, unknown>,
     };
   }
 }
