@@ -62,7 +62,7 @@ export class HyperliquidFetcher implements ExchangeFetcher {
     );
 
     const data = res.data;
-    const margin = data.crossMarginSummary ?? data.marginSummary;
+    const margin = data.marginSummary;
 
     const accountValue = Number(margin.accountValue);
     const totalMarginUsed = Number(margin.totalMarginUsed);
