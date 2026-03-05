@@ -7,6 +7,7 @@ import { PacificaFetcher } from "./exchanges/pacifica.js";
 import { NadoFetcher } from "./exchanges/nado.js";
 import { O1ExchangeFetcher } from "./exchanges/o1exchange.js";
 import { VariationalFetcher } from "./exchanges/variational.js";
+import { HyperliquidFetcher } from "./exchanges/hyperliquid.js";
 import { updateBalanceLog, appendSummary, ensureSheetHeaders } from "./services/google-sheets.js";
 import { sendAlerts, sendStartupMessage, startTelegramCommandListener, writeStatusToFile, StatusSnapshot } from "./services/telegram.js";
 import { analyzeAll } from "./services/risk-analyzer.js";
@@ -28,6 +29,13 @@ const nadoFetchers: ExchangeFetcher[] = nadoAddresses.map((addr, i) => {
   return new NadoFetcher(addr, label);
 });
 
+// Build Hyperliquid fetchers: one per wallet address (supports comma-separated)
+const hyperliquidAddresses = config.hyperliquid.walletAddresses;
+const hyperliquidFetchers: ExchangeFetcher[] = hyperliquidAddresses.map((addr, i) => {
+  const label = hyperliquidAddresses.length > 1 ? `Hyperliquid-${i + 1}` : "Hyperliquid";
+  return new HyperliquidFetcher(addr, label);
+});
+
 const fetchers: ExchangeFetcher[] = [
   new ParadexFetcher(),
   new LighterFetcher(),
@@ -36,6 +44,7 @@ const fetchers: ExchangeFetcher[] = [
   ...nadoFetchers,
   new O1ExchangeFetcher(),
   new VariationalFetcher(),
+  ...hyperliquidFetchers,
 ];
 
 let latestStatus: StatusSnapshot | null = null;

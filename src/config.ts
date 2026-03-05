@@ -97,6 +97,15 @@ export const config = {
     ),
   },
 
+  // Hyperliquid (supports comma-separated addresses: addr1,addr2)
+  hyperliquid: {
+    walletAddresses: (optEnv("HYPERLIQUID_WALLET_ADDRESS") ?? "")
+      .split(",")
+      .map((a) => a.trim())
+      .filter(Boolean),
+    baseUrl: env("HYPERLIQUID_BASE_URL", "https://api.hyperliquid.xyz"),
+  },
+
   // Risk thresholds
   risk: {
     warningPercent: Number(env("RISK_WARNING_PERCENT", "20")),
