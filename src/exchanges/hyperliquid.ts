@@ -140,8 +140,11 @@ export class HyperliquidFetcher implements ExchangeFetcher {
       }
       const data = result.value;
       const margin = data.marginSummary;
+      // accountValue already excludes isolated-margin collateral,
+      // so use crossMarginSummary to avoid double-subtracting isolated margin.
+      const crossMargin = data.crossMarginSummary;
       totalAccountValue += Number(margin.accountValue);
-      totalMarginUsed += Number(margin.totalMarginUsed);
+      totalMarginUsed += Number(crossMargin.totalMarginUsed);
 
       const dexPrefix = i === 0 ? undefined : hip3Dexes[i - 1];
       allPositions.push(...this.parsePositions(data, dexPrefix));
