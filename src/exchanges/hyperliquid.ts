@@ -38,6 +38,18 @@ interface ClearinghouseState {
   crossMaintenanceMarginUsed: string;
 }
 
+interface SpotBalance {
+  coin: string;
+  hold: string;
+  total: string;
+  entryNtl: string;
+  token: number;
+}
+
+interface SpotClearinghouseState {
+  balances: SpotBalance[];
+}
+
 export class HyperliquidFetcher implements ExchangeFetcher {
   name: string;
   enabled: boolean;
@@ -69,6 +81,16 @@ export class HyperliquidFetcher implements ExchangeFetcher {
     return res.data;
   }
 
+  private async fetchSpotState(): Promise<SpotClearinghouseState> {
+    const base = config.hyperliquid.baseUrl;
+    const res = await axios.post<SpotClearinghouseState>(
+      `${base}/info`,
+      { type: "spotClearinghouseState", user: this.walletAddress },
+      { timeout: 10000, headers: { "Content-Type": "application/json" } },
+    );
+    return res.data;
+  }
+
   private parsePositions(data: ClearinghouseState, dexPrefix?: string): Position[] {
     return data.assetPositions
       .filter((ap) => Number(ap.position.szi) !== 0)
@@ -93,19 +115,24 @@ export class HyperliquidFetcher implements ExchangeFetcher {
   async fetchBalance(): Promise<ExchangeBalance> {
     const hip3Dexes = config.hyperliquid.hip3Dexes;
 
-    // Fetch default perps + all HIP-3 dexes in parallel
-    const requests = [
+    // Fetch default perps + all HIP-3 dexes + spot in parallel
+    const perpRequests = [
       this.fetchClearinghouseState(),
       ...hip3Dexes.map((dex) => this.fetchClearinghouseState(dex)),
     ];
-    const results = await Promise.allSettled(requests);
+    const [perpResults, spotResult] = await Promise.all([
+      Promise.allSettled(perpRequests),
+      this.fetchSpotState().catch((err) => {
+        logger.warn(`${this.name}: failed to fetch spot state — ${err}`);
+        return null;
+      }),
+    ]);
 
     let totalAccountValue = 0;
-    let totalRawUsd = 0;
     let totalMarginUsed = 0;
     const allPositions: Position[] = [];
 
-    results.forEach((result, i) => {
+    perpResults.forEach((result, i) => {
       const dexName = i === 0 ? "default" : hip3Dexes[i - 1];
       if (result.status === "rejected") {
         logger.warn(`${this.name}: failed to fetch dex "${dexName}" — ${result.reason}`);
@@ -114,18 +141,34 @@ export class HyperliquidFetcher implements ExchangeFetcher {
       const data = result.value;
       const margin = data.marginSummary;
       totalAccountValue += Number(margin.accountValue);
-      totalRawUsd += Number(margin.totalRawUsd);
       totalMarginUsed += Number(margin.totalMarginUsed);
 
       const dexPrefix = i === 0 ? undefined : hip3Dexes[i - 1];
       allPositions.push(...this.parsePositions(data, dexPrefix));
     });
 
-    const totalUsd = totalAccountValue;
-    const balance = totalRawUsd;
+    // Add spot balances to total equity
+    // USDC (and other stablecoins) count as 1:1 USD value
+    // Non-stablecoin spot tokens use their entryNtl (notional value) as approximation
+    let spotUsdValue = 0;
+    if (spotResult?.balances) {
+      for (const bal of spotResult.balances) {
+        const total = Number(bal.total);
+        if (total === 0) continue;
+        if (bal.coin === "USDC" || bal.coin === "USDT" || bal.coin === "USDCE") {
+          spotUsdValue += total;
+        } else {
+          // entryNtl is the USD notional value at entry; use as approximation
+          spotUsdValue += Number(bal.entryNtl || 0);
+        }
+      }
+    }
+
+    const perpsEquity = totalAccountValue;
+    const totalUsd = perpsEquity + spotUsdValue;
     const marginUsed = totalMarginUsed;
-    const freeMargin = totalUsd - marginUsed;
-    const marginFreePercent = totalUsd > 0 ? (freeMargin / totalUsd) * 100 : 100;
+    const balance = totalUsd - marginUsed; // free collateral (consistent with other exchanges)
+    const marginFreePercent = totalUsd > 0 ? (balance / totalUsd) * 100 : 100;
     const unrealizedPnl = allPositions.reduce((sum, p) => sum + p.unrealizedPnl, 0);
 
     return {
