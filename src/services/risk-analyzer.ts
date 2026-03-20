@@ -1,12 +1,23 @@
 import { config } from "../config.js";
 import { ExchangeBalance, Position, RiskAssessment, RiskLevel } from "../exchanges/types.js";
 
+function getCoinName(market: string): string {
+  // Strip dex prefix (e.g. "hyperliquidDex:XYZ100" -> "XYZ100")
+  const parts = market.split(":");
+  return (parts.length > 1 ? parts[parts.length - 1] : market).toUpperCase();
+}
+
 function positionRiskLevel(p: Position): RiskLevel {
   if (p.liquidationDistancePercent == null) return "safe";
   const dist = p.liquidationDistancePercent;
-  if (dist <= config.risk.positionCriticalDistance) return "critical";
-  if (dist <= config.risk.positionDangerDistance) return "danger";
-  if (dist <= config.risk.positionWarningDistance) return "warning";
+  const coin = getCoinName(p.market);
+  const custom = config.risk.positionCustomDistances[coin];
+  const criticalDist = custom?.critical ?? config.risk.positionCriticalDistance;
+  const dangerDist = custom?.danger ?? config.risk.positionDangerDistance;
+  const warningDist = custom?.warning ?? config.risk.positionWarningDistance;
+  if (dist <= criticalDist) return "critical";
+  if (dist <= dangerDist) return "danger";
+  if (dist <= warningDist) return "warning";
   return "safe";
 }
 

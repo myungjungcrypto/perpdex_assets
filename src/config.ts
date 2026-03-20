@@ -19,6 +19,28 @@ function boolEnv(key: string, fallback: boolean): boolean {
   return ["1", "true", "yes", "on"].includes(val.toLowerCase());
 }
 
+interface CoinDistanceThresholds {
+  warning: number;
+  danger: number;
+  critical: number;
+}
+
+function parseCustomDistances(raw: string): Record<string, CoinDistanceThresholds> {
+  const result: Record<string, CoinDistanceThresholds> = {};
+  if (!raw.trim()) return result;
+  for (const entry of raw.split(",")) {
+    const parts = entry.trim().split(":");
+    if (parts.length !== 4) continue;
+    const [coin, w, d, c] = parts;
+    result[coin.toUpperCase()] = {
+      warning: Number(w),
+      danger: Number(d),
+      critical: Number(c),
+    };
+  }
+  return result;
+}
+
 export const config = {
   // Google Sheets (optional — omit credentials to disable)
   google: {
@@ -120,5 +142,11 @@ export const config = {
     positionDangerDistance: Number(env("POSITION_DANGER_DISTANCE", "15")),
     positionCriticalDistance: Number(env("POSITION_CRITICAL_DISTANCE", "7")),
     alertCooldownMinutes: Number(env("ALERT_COOLDOWN_MINUTES", "30")),
+    // Per-coin custom warning distance overrides
+    // Format: "COIN:warn:danger:critical,COIN2:warn:danger:critical"
+    // e.g. "XYZ100:5:3:1,ETH:20:10:5"
+    positionCustomDistances: parseCustomDistances(
+      optEnv("POSITION_CUSTOM_DISTANCES") ?? "XYZ100:5:3:1"
+    ),
   },
 };
