@@ -140,11 +140,16 @@ export class HyperliquidFetcher implements ExchangeFetcher {
       }
       const data = result.value;
       const margin = data.marginSummary;
-      // accountValue already excludes isolated-margin collateral,
-      // so use crossMarginSummary to avoid double-subtracting isolated margin.
-      const crossMargin = data.crossMarginSummary;
-      totalAccountValue += Number(margin.accountValue);
-      totalMarginUsed += Number(crossMargin.totalMarginUsed);
+
+      if (i === 0) {
+        // Default clearinghouseState: accountValue is the overall perp trading
+        // equity which already includes collateral locked in HIP-3 dexes.
+        // Only take accountValue from here to avoid double-counting.
+        totalAccountValue = Number(margin.accountValue);
+      }
+      // Sum totalMarginUsed from ALL dexes (default + HIP-3) to capture
+      // both cross and isolated margin across all venues.
+      totalMarginUsed += Number(margin.totalMarginUsed);
 
       const dexPrefix = i === 0 ? undefined : hip3Dexes[i - 1];
       allPositions.push(...this.parsePositions(data, dexPrefix));
