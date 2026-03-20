@@ -115,6 +115,10 @@ export const config = {
     warningPercent: Number(env("RISK_WARNING_PERCENT", "20")),
     dangerPercent: Number(env("RISK_DANGER_PERCENT", "10")),
     criticalPercent: Number(env("RISK_CRITICAL_PERCENT", "5")),
+    // Per-position liquidation distance thresholds (%)
+    positionWarningDistance: Number(env("POSITION_WARNING_DISTANCE", "30")),
+    positionDangerDistance: Number(env("POSITION_DANGER_DISTANCE", "15")),
+    positionCriticalDistance: Number(env("POSITION_CRITICAL_DISTANCE", "7")),
     alertCooldownMinutes: Number(env("ALERT_COOLDOWN_MINUTES", "30")),
   },
 };

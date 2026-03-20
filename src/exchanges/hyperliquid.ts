@@ -81,6 +81,18 @@ export class HyperliquidFetcher implements ExchangeFetcher {
     return res.data;
   }
 
+  private async fetchAllMids(dex?: string): Promise<Record<string, string>> {
+    const base = config.hyperliquid.baseUrl;
+    const body: Record<string, string> = { type: "allMids" };
+    if (dex) body.dex = dex;
+    const res = await axios.post<Record<string, string>>(
+      `${base}/info`,
+      body,
+      { timeout: 10000, headers: { "Content-Type": "application/json" } },
+    );
+    return res.data;
+  }
+
   private async fetchSpotState(): Promise<SpotClearinghouseState> {
     const base = config.hyperliquid.baseUrl;
     const res = await axios.post<SpotClearinghouseState>(
@@ -91,23 +103,41 @@ export class HyperliquidFetcher implements ExchangeFetcher {
     return res.data;
   }
 
-  private parsePositions(data: ClearinghouseState, dexPrefix?: string): Position[] {
+  private parsePositions(
+    data: ClearinghouseState,
+    midPrices: Record<string, string>,
+    dexPrefix?: string,
+  ): Position[] {
     return data.assetPositions
       .filter((ap) => Number(ap.position.szi) !== 0)
       .map((ap) => {
         const p = ap.position;
         const size = Number(p.szi);
         const coin = dexPrefix ? `${dexPrefix}:${p.coin}` : p.coin;
+        const side = size >= 0 ? "long" as const : "short" as const;
+        const mark = midPrices[p.coin] ? Number(midPrices[p.coin]) : undefined;
+        const liqPx = p.liquidationPx ? Number(p.liquidationPx) : undefined;
+        const marginMode = p.leverage?.type === "isolated" ? "isolated" as const : "cross" as const;
+
+        let liquidationDistancePercent: number | undefined;
+        if (mark && liqPx && mark > 0) {
+          liquidationDistancePercent = side === "short"
+            ? ((liqPx - mark) / mark) * 100
+            : ((mark - liqPx) / mark) * 100;
+        }
+
         return {
           market: coin,
-          side: size >= 0 ? "long" as const : "short" as const,
+          side,
           size: Math.abs(size),
           entryPrice: Number(p.entryPx),
-          markPrice: undefined,
+          markPrice: mark,
           unrealizedPnl: Number(p.unrealizedPnl),
-          liquidationPrice: p.liquidationPx ? Number(p.liquidationPx) : undefined,
+          liquidationPrice: liqPx,
+          liquidationDistancePercent,
           margin: Number(p.marginUsed),
           leverage: p.leverage?.value,
+          marginMode,
         };
       });
   }
@@ -115,13 +145,18 @@ export class HyperliquidFetcher implements ExchangeFetcher {
   async fetchBalance(): Promise<ExchangeBalance> {
     const hip3Dexes = config.hyperliquid.hip3Dexes;
 
-    // Fetch default perps + all HIP-3 dexes + spot in parallel
+    // Fetch default perps + all HIP-3 dexes + spot + mid prices in parallel
     const perpRequests = [
       this.fetchClearinghouseState(),
       ...hip3Dexes.map((dex) => this.fetchClearinghouseState(dex)),
     ];
-    const [perpResults, spotResult] = await Promise.all([
+    const midRequests = [
+      this.fetchAllMids(),
+      ...hip3Dexes.map((dex) => this.fetchAllMids(dex)),
+    ];
+    const [perpResults, midResults, spotResult] = await Promise.all([
       Promise.allSettled(perpRequests),
+      Promise.allSettled(midRequests),
       this.fetchSpotState().catch((err) => {
         logger.warn(`${this.name}: failed to fetch spot state — ${err}`);
         return null;
@@ -151,8 +186,10 @@ export class HyperliquidFetcher implements ExchangeFetcher {
       // both cross and isolated margin across all venues.
       totalMarginUsed += Number(margin.totalMarginUsed);
 
+      const midResult = midResults[i];
+      const mids = midResult.status === "fulfilled" ? midResult.value : {};
       const dexPrefix = i === 0 ? undefined : hip3Dexes[i - 1];
-      allPositions.push(...this.parsePositions(data, dexPrefix));
+      allPositions.push(...this.parsePositions(data, mids, dexPrefix));
     });
 
     // Add spot balances to total equity

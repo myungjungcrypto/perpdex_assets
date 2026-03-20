@@ -1,10 +1,41 @@
 import { config } from "../config.js";
-import { ExchangeBalance, RiskAssessment, RiskLevel } from "../exchanges/types.js";
+import { ExchangeBalance, Position, RiskAssessment, RiskLevel } from "../exchanges/types.js";
+
+function positionRiskLevel(p: Position): RiskLevel {
+  if (p.liquidationDistancePercent == null) return "safe";
+  const dist = p.liquidationDistancePercent;
+  if (dist <= config.risk.positionCriticalDistance) return "critical";
+  if (dist <= config.risk.positionDangerDistance) return "danger";
+  if (dist <= config.risk.positionWarningDistance) return "warning";
+  return "safe";
+}
+
+const LEVEL_SEVERITY: Record<RiskLevel, number> = { safe: 0, warning: 1, danger: 2, critical: 3 };
+
+function positionRiskEmoji(level: RiskLevel): string {
+  return { safe: "\u{2705}", warning: "\u{26A0}\u{FE0F}", danger: "\u{1F7E0}", critical: "\u{1F534}" }[level];
+}
+
+function formatPositionLine(p: Position): string {
+  const pLevel = positionRiskLevel(p);
+  const emoji = positionRiskEmoji(pLevel);
+  const mode = p.marginMode === "isolated" ? " [iso]" : "";
+  const lev = p.leverage ? ` ${p.leverage}x` : "";
+  const mark = p.markPrice != null ? p.markPrice : p.entryPrice;
+  const liqStr = p.liquidationPrice != null
+    ? ` liq ${p.liquidationPrice}`
+    : "";
+  const distStr = p.liquidationDistancePercent != null
+    ? ` (${p.liquidationDistancePercent.toFixed(1)}% away)`
+    : "";
+  return `${emoji} ${p.market} ${p.side}${lev}${mode} ${p.size} @ ${mark}${liqStr}${distStr}`;
+}
 
 export function analyzeRisk(balance: ExchangeBalance): RiskAssessment {
   const pct = balance.marginFreePercent;
-  let level: RiskLevel = "safe";
 
+  // Overall margin-level risk
+  let level: RiskLevel = "safe";
   if (pct <= config.risk.criticalPercent) {
     level = "critical";
   } else if (pct <= config.risk.dangerPercent) {
@@ -13,28 +44,60 @@ export function analyzeRisk(balance: ExchangeBalance): RiskAssessment {
     level = "warning";
   }
 
-  const messages: Record<RiskLevel, string> = {
-    safe: "",
-    warning: `Margin free at ${pct.toFixed(1)}% — approaching risk zone`,
-    danger: `Margin free at ${pct.toFixed(1)}% — liquidation risk!`,
-    critical: `MARGIN FREE ${pct.toFixed(1)}% — LIQUIDATION IMMINENT!`,
-  };
+  // Per-position liquidation distance risk — escalate if any position is worse
+  let worstPositionLevel: RiskLevel = "safe";
+  for (const p of balance.positions) {
+    const pLevel = positionRiskLevel(p);
+    if (LEVEL_SEVERITY[pLevel] > LEVEL_SEVERITY[worstPositionLevel]) {
+      worstPositionLevel = pLevel;
+    }
+  }
+  if (LEVEL_SEVERITY[worstPositionLevel] > LEVEL_SEVERITY[level]) {
+    level = worstPositionLevel;
+  }
 
-  const positionSummary = balance.positions
-    .map(
-      (p) =>
-        `${p.market} ${p.side} ${p.size} @ ${p.entryPrice}` +
-        (p.liquidationPrice ? ` (liq: ${p.liquidationPrice})` : "")
-    )
-    .join("\n");
+  // Build message
+  const parts: string[] = [];
+  if (pct <= config.risk.warningPercent) {
+    const marginMessages: Record<RiskLevel, string> = {
+      safe: "",
+      warning: `Margin free at ${pct.toFixed(1)}% — approaching risk zone`,
+      danger: `Margin free at ${pct.toFixed(1)}% — liquidation risk!`,
+      critical: `MARGIN FREE ${pct.toFixed(1)}% — LIQUIDATION IMMINENT!`,
+    };
+    const marginLevel: RiskLevel = pct <= config.risk.criticalPercent ? "critical"
+      : pct <= config.risk.dangerPercent ? "danger"
+      : "warning";
+    parts.push(marginMessages[marginLevel]);
+  }
+
+  // Position-level warnings
+  const riskyPositions = balance.positions
+    .filter((p) => LEVEL_SEVERITY[positionRiskLevel(p)] >= LEVEL_SEVERITY.warning)
+    .sort((a, b) =>
+      LEVEL_SEVERITY[positionRiskLevel(b)] - LEVEL_SEVERITY[positionRiskLevel(a)]
+    );
+  for (const p of riskyPositions) {
+    const pLevel = positionRiskLevel(p);
+    const dist = p.liquidationDistancePercent!.toFixed(1);
+    if (pLevel === "critical") {
+      parts.push(`${p.market}: liq ${dist}% away — IMMINENT!`);
+    } else if (pLevel === "danger") {
+      parts.push(`${p.market}: liq ${dist}% away — danger`);
+    } else {
+      parts.push(`${p.market}: liq ${dist}% away — warning`);
+    }
+  }
+
+  // Position details
+  const positionLines = balance.positions.map(formatPositionLine).join("\n");
 
   return {
     exchange: balance.exchange,
     level,
     marginFreePercent: pct,
-    message: messages[level],
-    details:
-      level !== "safe" && positionSummary ? `Positions:\n${positionSummary}` : undefined,
+    message: parts.join("\n"),
+    details: level !== "safe" && positionLines ? `Positions:\n${positionLines}` : undefined,
   };
 }
 

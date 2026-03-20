@@ -6,8 +6,10 @@ export interface Position {
   markPrice?: number;
   unrealizedPnl: number;
   liquidationPrice?: number;
+  liquidationDistancePercent?: number; // how far current price is from liquidation (%)
   margin?: number;
   leverage?: number;
+  marginMode?: "cross" | "isolated";
 }
 
 export interface ExchangeBalance {
