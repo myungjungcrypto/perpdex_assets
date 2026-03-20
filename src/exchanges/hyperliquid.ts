@@ -182,9 +182,10 @@ export class HyperliquidFetcher implements ExchangeFetcher {
         // Only take accountValue from here to avoid double-counting.
         totalAccountValue = Number(margin.accountValue);
       }
-      // Sum totalMarginUsed from ALL dexes (default + HIP-3) to capture
-      // both cross and isolated margin across all venues.
-      totalMarginUsed += Number(margin.totalMarginUsed);
+      // Only count cross margin as "used" for account-level risk.
+      // Isolated positions manage their own risk via liquidation distance
+      // and should not inflate the account-level margin free %.
+      totalMarginUsed += Number(data.crossMarginSummary.totalMarginUsed);
 
       const midResult = midResults[i];
       const mids = midResult.status === "fulfilled" ? midResult.value : {};
