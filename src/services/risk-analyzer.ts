@@ -7,14 +7,24 @@ function getCoinName(market: string): string {
   return (parts.length > 1 ? parts[parts.length - 1] : market).toUpperCase();
 }
 
+function isXyzMarket(market: string): boolean {
+  const prefix = config.risk.positionXyzPrefix;
+  return prefix.length > 0 && market.toLowerCase().startsWith(prefix);
+}
+
 function positionRiskLevel(p: Position): RiskLevel {
   if (p.liquidationDistancePercent == null) return "safe";
   const dist = p.liquidationDistancePercent;
   const coin = getCoinName(p.market);
   const custom = config.risk.positionCustomDistances[coin];
-  const criticalDist = custom?.critical ?? config.risk.positionCriticalDistance;
-  const dangerDist = custom?.danger ?? config.risk.positionDangerDistance;
-  const warningDist = custom?.warning ?? config.risk.positionWarningDistance;
+  // Priority: per-coin override > xyz: prefix override > global defaults
+  const xyz = !custom && isXyzMarket(p.market);
+  const criticalDist = custom?.critical
+    ?? (xyz ? config.risk.positionXyzCriticalDistance : config.risk.positionCriticalDistance);
+  const dangerDist = custom?.danger
+    ?? (xyz ? config.risk.positionXyzDangerDistance : config.risk.positionDangerDistance);
+  const warningDist = custom?.warning
+    ?? (xyz ? config.risk.positionXyzWarningDistance : config.risk.positionWarningDistance);
   if (dist <= criticalDist) return "critical";
   if (dist <= dangerDist) return "danger";
   if (dist <= warningDist) return "warning";

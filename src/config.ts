@@ -148,5 +148,11 @@ export const config = {
     positionCustomDistances: parseCustomDistances(
       optEnv("POSITION_CUSTOM_DISTANCES") ?? "XYZ100:5:3:1"
     ),
+    // trade.xyz RWA assets (HIP-3 dex prefix "xyz:") move slowly,
+    // so default to tighter thresholds than other perps.
+    positionXyzPrefix: (optEnv("POSITION_XYZ_PREFIX") ?? "xyz:").toLowerCase(),
+    positionXyzWarningDistance: Number(env("POSITION_XYZ_WARNING_DISTANCE", "10")),
+    positionXyzDangerDistance: Number(env("POSITION_XYZ_DANGER_DISTANCE", "5")),
+    positionXyzCriticalDistance: Number(env("POSITION_XYZ_CRITICAL_DISTANCE", "2")),
   },
 };
