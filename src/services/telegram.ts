@@ -204,11 +204,11 @@ export async function sendAlert(assessment: RiskAssessment): Promise<void> {
   const emoji = LEVEL_EMOJI[assessment.level];
   const levelLabel = assessment.level.toUpperCase();
   const text = [
-    `${emoji} <b>[${levelLabel}] ${assessment.exchange}</b>`,
+    `${emoji} <b>[${levelLabel}] ${escapeHtml(assessment.exchange)}</b>`,
     ``,
     `Margin Free: <b>${assessment.marginFreePercent.toFixed(1)}%</b>`,
-    assessment.message,
-    assessment.details ?? "",
+    assessment.message ? escapeHtml(assessment.message) : "",
+    assessment.details ? escapeHtml(assessment.details) : "",
   ]
     .filter(Boolean)
     .join("\n");

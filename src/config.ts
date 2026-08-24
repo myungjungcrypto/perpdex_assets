@@ -19,6 +19,28 @@ function boolEnv(key: string, fallback: boolean): boolean {
   return ["1", "true", "yes", "on"].includes(val.toLowerCase());
 }
 
+interface CoinDistanceThresholds {
+  warning: number;
+  danger: number;
+  critical: number;
+}
+
+function parseCustomDistances(raw: string): Record<string, CoinDistanceThresholds> {
+  const result: Record<string, CoinDistanceThresholds> = {};
+  if (!raw.trim()) return result;
+  for (const entry of raw.split(",")) {
+    const parts = entry.trim().split(":");
+    if (parts.length !== 4) continue;
+    const [coin, w, d, c] = parts;
+    result[coin.toUpperCase()] = {
+      warning: Number(w),
+      danger: Number(d),
+      critical: Number(c),
+    };
+  }
+  return result;
+}
+
 export const config = {
   // Google Sheets (optional — omit credentials to disable)
   google: {
@@ -129,6 +151,22 @@ export const config = {
     warningPercent: Number(env("RISK_WARNING_PERCENT", "20")),
     dangerPercent: Number(env("RISK_DANGER_PERCENT", "10")),
     criticalPercent: Number(env("RISK_CRITICAL_PERCENT", "5")),
+    // Per-position liquidation distance thresholds (%)
+    positionWarningDistance: Number(env("POSITION_WARNING_DISTANCE", "30")),
+    positionDangerDistance: Number(env("POSITION_DANGER_DISTANCE", "15")),
+    positionCriticalDistance: Number(env("POSITION_CRITICAL_DISTANCE", "7")),
     alertCooldownMinutes: Number(env("ALERT_COOLDOWN_MINUTES", "30")),
+    // Per-coin custom warning distance overrides
+    // Format: "COIN:warn:danger:critical,COIN2:warn:danger:critical"
+    // e.g. "XYZ100:5:3:1,ETH:20:10:5"
+    positionCustomDistances: parseCustomDistances(
+      optEnv("POSITION_CUSTOM_DISTANCES") ?? "XYZ100:5:3:1"
+    ),
+    // trade.xyz RWA assets (HIP-3 dex prefix "xyz:") move slowly,
+    // so default to tighter thresholds than other perps.
+    positionXyzPrefix: (optEnv("POSITION_XYZ_PREFIX") ?? "xyz:").toLowerCase(),
+    positionXyzWarningDistance: Number(env("POSITION_XYZ_WARNING_DISTANCE", "10")),
+    positionXyzDangerDistance: Number(env("POSITION_XYZ_DANGER_DISTANCE", "5")),
+    positionXyzCriticalDistance: Number(env("POSITION_XYZ_CRITICAL_DISTANCE", "2")),
   },
 };
