@@ -1,6 +1,7 @@
 import { google, sheets_v4 } from "googleapis";
 import { config } from "../config.js";
 import { ExchangeBalance } from "../exchanges/types.js";
+import { BrokerBalance } from "../brokers/types.js";
 import { logger } from "../utils/logger.js";
 
 let sheetsClient: sheets_v4.Sheets | null = null;
@@ -83,6 +84,112 @@ export async function updateBalanceLog(
     logger.info(`Updated ${requests.length} rows in Balance Log (overwrite)`);
   } catch (err) {
     logger.error("Failed to update Balance Log", err);
+    throw err;
+  }
+}
+
+// Fixed row assignments in Broker Log (KRW amounts).
+// Reference from other sheets like ='Broker Log'!C2/10000 for 만원 units.
+const BROKER_ROW: Record<string, number> = {
+  Kiwoom: 2,
+  KB: 3,
+  Samsung: 4,
+};
+
+const BROKER_LOG_SHEET = "Broker Log";
+
+export async function updateBrokerLog(balances: BrokerBalance[]): Promise<void> {
+  if (!config.google.enabled || balances.length === 0) return;
+  const sheets = getClient();
+
+  const requests = balances
+    .map((b) => {
+      const row = BROKER_ROW[b.broker];
+      if (!row) {
+        logger.warn(`Broker Log: unknown broker "${b.broker}", skipping`);
+        return null;
+      }
+      const topHoldings = b.holdings
+        .slice()
+        .sort((a, x) => x.evalAmount - a.evalAmount)
+        .slice(0, 5)
+        .map((h) => `${h.name} ${(h.evalAmount / 10000).toFixed(0)}만`)
+        .join(", ");
+      return sheets.spreadsheets.values.update({
+        spreadsheetId: config.google.spreadsheetId,
+        range: `${BROKER_LOG_SHEET}!A${row}:I${row}`,
+        valueInputOption: "USER_ENTERED",
+        requestBody: {
+          values: [[
+            b.timestamp,
+            b.broker,
+            b.totalKrw,
+            b.stockValueKrw,
+            b.profitLossKrw,
+            `${b.profitRatePercent.toFixed(2)}%`,
+            b.loanKrw,
+            b.holdings.length,
+            topHoldings,
+          ]],
+        },
+      });
+    })
+    .filter(Boolean);
+
+  try {
+    await Promise.all(requests);
+    logger.info(`Updated ${requests.length} rows in Broker Log`);
+  } catch (err) {
+    logger.error("Failed to update Broker Log", err);
+    throw err;
+  }
+}
+
+export async function ensureBrokerLogHeaders(): Promise<void> {
+  if (!config.google.enabled) return;
+  const sheets = getClient();
+  const spreadsheetId = config.google.spreadsheetId;
+
+  try {
+    const meta = await sheets.spreadsheets.get({ spreadsheetId });
+    const existing = meta.data.sheets?.map((s) => s.properties?.title) ?? [];
+
+    if (!existing.includes(BROKER_LOG_SHEET)) {
+      await sheets.spreadsheets.batchUpdate({
+        spreadsheetId,
+        requestBody: {
+          requests: [{ addSheet: { properties: { title: BROKER_LOG_SHEET } } }],
+        },
+      });
+      logger.info(`Created sheet: ${BROKER_LOG_SHEET}`);
+    }
+
+    const check = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: `${BROKER_LOG_SHEET}!A1`,
+    });
+    if (!check.data.values?.length) {
+      await sheets.spreadsheets.values.update({
+        spreadsheetId,
+        range: `${BROKER_LOG_SHEET}!A1:I1`,
+        valueInputOption: "RAW",
+        requestBody: {
+          values: [[
+            "Timestamp",
+            "Broker",
+            "Total (KRW)",
+            "Stock Value (KRW)",
+            "Eval P/L (KRW)",
+            "P/L %",
+            "Loan (KRW)",
+            "Holdings",
+            "Top Holdings",
+          ]],
+        },
+      });
+    }
+  } catch (err) {
+    logger.error("Failed to ensure Broker Log headers", err);
     throw err;
   }
 }

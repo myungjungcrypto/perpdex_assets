@@ -8,7 +8,9 @@ import { NadoFetcher } from "./exchanges/nado.js";
 import { O1ExchangeFetcher } from "./exchanges/o1exchange.js";
 import { VariationalFetcher } from "./exchanges/variational.js";
 import { HyperliquidFetcher } from "./exchanges/hyperliquid.js";
-import { updateBalanceLog, appendSummary, ensureSheetHeaders } from "./services/google-sheets.js";
+import { BrokerFetcher } from "./brokers/types.js";
+import { KiwoomFetcher } from "./brokers/kiwoom.js";
+import { updateBalanceLog, appendSummary, ensureSheetHeaders, updateBrokerLog, ensureBrokerLogHeaders } from "./services/google-sheets.js";
 import { sendAlerts, sendStartupMessage, startTelegramCommandListener, writeStatusToFile, StatusSnapshot } from "./services/telegram.js";
 import { analyzeAll } from "./services/risk-analyzer.js";
 import { logger } from "./utils/logger.js";
@@ -47,11 +49,47 @@ const fetchers: ExchangeFetcher[] = [
   ...hyperliquidFetchers,
 ];
 
+// Korean brokerages — polled on a slower cadence than the perp DEXes
+const brokerFetchers: BrokerFetcher[] = [new KiwoomFetcher()];
+const BROKER_INTERVAL_MS = config.broker.updateIntervalMinutes * 60_000;
+let lastBrokerFetchAt = 0;
+
+async function runBrokers(): Promise<void> {
+  const enabled = brokerFetchers.filter((b) => b.enabled);
+  if (enabled.length === 0) return;
+  if (Date.now() - lastBrokerFetchAt < BROKER_INTERVAL_MS) return;
+  lastBrokerFetchAt = Date.now();
+
+  const results = await Promise.allSettled(enabled.map((b) => b.fetchBalance()));
+  const balances = results
+    .filter((r): r is PromiseFulfilledResult<Awaited<ReturnType<BrokerFetcher["fetchBalance"]>>> => r.status === "fulfilled")
+    .map((r) => r.value);
+
+  results.forEach((r, i) => {
+    if (r.status === "fulfilled") {
+      logger.info(`${r.value.broker}: ₩${r.value.totalKrw.toLocaleString()} (${r.value.holdings.length} holdings)`);
+    } else {
+      logger.error(`${enabled[i].name}: broker fetch failed — ${r.reason}`);
+    }
+  });
+
+  if (balances.length > 0) {
+    try {
+      await updateBrokerLog(balances);
+    } catch (err) {
+      logger.error("Broker Log write failed", err);
+    }
+  }
+}
+
 let latestStatus: StatusSnapshot | null = null;
 
 async function run(): Promise<void> {
   const startTime = Date.now();
   logger.info("=== Balance Monitor: cycle start ===");
+
+  // Brokers run on their own cadence; a failure here must not block exchanges
+  runBrokers().catch((err) => logger.error("Broker cycle failed", err));
 
   const enabledFetchers = fetchers.filter((f) => f.enabled);
   if (enabledFetchers.length === 0) {
@@ -162,6 +200,14 @@ async function main(): Promise<void> {
     await ensureSheetHeaders();
   } catch (err) {
     logger.error("Failed to initialize Google Sheets", err);
+  }
+
+  if (brokerFetchers.some((b) => b.enabled)) {
+    try {
+      await ensureBrokerLogHeaders();
+    } catch (err) {
+      logger.error("Failed to initialize Broker Log sheet", err);
+    }
   }
 
   // Send startup notification

@@ -110,6 +110,20 @@ export const config = {
       .filter(Boolean),
   },
 
+  // Kiwoom Securities (키움증권) REST API
+  // WARNING: Kiwoom keys carry order permissions — keep .env private (chmod 600)
+  kiwoom: {
+    appKey: optEnv("KIWOOM_APP_KEY"),
+    appSecret: optEnv("KIWOOM_APP_SECRET"),
+    // Real: https://api.kiwoom.com / Mock: https://mockapi.kiwoom.com
+    baseUrl: env("KIWOOM_BASE_URL", "https://api.kiwoom.com"),
+  },
+
+  // Broker polling cadence (slower than perp DEXes — stock values change slowly)
+  broker: {
+    updateIntervalMinutes: Number(env("BROKER_UPDATE_INTERVAL_MINUTES", "5")),
+  },
+
   // Risk thresholds
   risk: {
     warningPercent: Number(env("RISK_WARNING_PERCENT", "20")),
