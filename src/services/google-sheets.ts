@@ -92,8 +92,9 @@ export async function updateBalanceLog(
 // Reference from other sheets like ='Broker Log'!C2/10000 for 만원 units.
 const BROKER_ROW: Record<string, number> = {
   Kiwoom: 2,
-  KB: 3,
-  Samsung: 4,
+  KiwoomFutures: 3,
+  KB: 4,
+  Samsung: 5,
 };
 
 const BROKER_LOG_SHEET = "Broker Log";

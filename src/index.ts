@@ -10,6 +10,7 @@ import { VariationalFetcher } from "./exchanges/variational.js";
 import { HyperliquidFetcher } from "./exchanges/hyperliquid.js";
 import { BrokerFetcher } from "./brokers/types.js";
 import { KiwoomFetcher } from "./brokers/kiwoom.js";
+import { KiwoomFuturesFetcher } from "./brokers/kiwoom-futures.js";
 import { updateBalanceLog, appendSummary, ensureSheetHeaders, updateBrokerLog, ensureBrokerLogHeaders } from "./services/google-sheets.js";
 import { sendAlerts, sendStartupMessage, startTelegramCommandListener, writeStatusToFile, StatusSnapshot } from "./services/telegram.js";
 import { analyzeAll } from "./services/risk-analyzer.js";
@@ -50,7 +51,7 @@ const fetchers: ExchangeFetcher[] = [
 ];
 
 // Korean brokerages — polled on a slower cadence than the perp DEXes
-const brokerFetchers: BrokerFetcher[] = [new KiwoomFetcher()];
+const brokerFetchers: BrokerFetcher[] = [new KiwoomFetcher(), new KiwoomFuturesFetcher()];
 const BROKER_INTERVAL_MS = config.broker.updateIntervalMinutes * 60_000;
 let lastBrokerFetchAt = 0;
 

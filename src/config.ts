@@ -141,6 +141,13 @@ export const config = {
     baseUrl: env("KIWOOM_BASE_URL", "https://api.kiwoom.com"),
   },
 
+  // Kiwoom futures account via kiwoom_daemon gateway on the Windows EC2
+  // (hynix_samsung_premium repo). Use the VPC private IP, e.g. http://172.31.x.x:8899
+  kiwoomFutures: {
+    gwUrl: optEnv("KIWOOM_FUTURES_GW_URL"),
+    gwToken: optEnv("KIWOOM_FUTURES_GW_TOKEN"),
+  },
+
   // Broker polling cadence (slower than perp DEXes — stock values change slowly)
   broker: {
     updateIntervalMinutes: Number(env("BROKER_UPDATE_INTERVAL_MINUTES", "5")),
