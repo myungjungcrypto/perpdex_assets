@@ -38,6 +38,18 @@ interface ClearinghouseState {
   crossMaintenanceMarginUsed: string;
 }
 
+interface SpotBalance {
+  coin: string;
+  hold: string;
+  total: string;
+  entryNtl: string;
+  token: number;
+}
+
+interface SpotClearinghouseState {
+  balances: SpotBalance[];
+}
+
 export class HyperliquidFetcher implements ExchangeFetcher {
   name: string;
   enabled: boolean;
@@ -76,6 +88,16 @@ export class HyperliquidFetcher implements ExchangeFetcher {
     const res = await axios.post<Record<string, string>>(
       `${base}/info`,
       body,
+      { timeout: 10000, headers: { "Content-Type": "application/json" } },
+    );
+    return res.data;
+  }
+
+  private async fetchSpotState(): Promise<SpotClearinghouseState> {
+    const base = config.hyperliquid.baseUrl;
+    const res = await axios.post<SpotClearinghouseState>(
+      `${base}/info`,
+      { type: "spotClearinghouseState", user: this.walletAddress },
       { timeout: 10000, headers: { "Content-Type": "application/json" } },
     );
     return res.data;
@@ -123,7 +145,7 @@ export class HyperliquidFetcher implements ExchangeFetcher {
   async fetchBalance(): Promise<ExchangeBalance> {
     const hip3Dexes = config.hyperliquid.hip3Dexes;
 
-    // Fetch default perps + all HIP-3 dexes + mid prices in parallel.
+    // Fetch default perps + all HIP-3 dexes + unified balances + mid prices.
     const perpRequests = [
       this.fetchClearinghouseState(),
       ...hip3Dexes.map((dex) => this.fetchClearinghouseState(dex)),
@@ -132,9 +154,13 @@ export class HyperliquidFetcher implements ExchangeFetcher {
       this.fetchAllMids(),
       ...hip3Dexes.map((dex) => this.fetchAllMids(dex)),
     ];
-    const [perpResults, midResults] = await Promise.all([
+    const [perpResults, midResults, spotResult] = await Promise.all([
       Promise.allSettled(perpRequests),
       Promise.allSettled(midRequests),
+      this.fetchSpotState().catch((err) => {
+        logger.warn(`${this.name}: failed to fetch unified balance — ${err}`);
+        return null;
+      }),
     ]);
 
     let totalAccountValue = 0;
@@ -167,10 +193,19 @@ export class HyperliquidFetcher implements ExchangeFetcher {
       allPositions.push(...this.parsePositions(data, mids, dexPrefix));
     });
 
-    // Balance Log tracks Hyperliquid perp equity. Spot HYPE is valued separately
-    // in the asset sheet, so adding spot entryNtl here would double-count it and
-    // use cost basis instead of current market value.
-    const totalUsd = totalAccountValue;
+    // Unified-account balances are the source of truth across spot and perps.
+    // Only USD collateral is used here; non-stable spot assets are valued
+    // separately in the asset sheet. Never add perp accountValue to this value.
+    const stablecoins = new Set(["USDC", "USDT", "USDCE"]);
+    const unifiedCollateralUsd = (spotResult?.balances ?? []).reduce((sum, bal) => {
+      if (!stablecoins.has(bal.coin.toUpperCase())) return sum;
+      return sum + Number(bal.total || 0);
+    }, 0);
+    const usesUnifiedBalance = unifiedCollateralUsd > 0;
+    const totalUsd = usesUnifiedBalance ? unifiedCollateralUsd : totalAccountValue;
+    if (!usesUnifiedBalance) {
+      logger.warn(`${this.name}: unified USD balance unavailable — using perp accountValue fallback`);
+    }
     const marginUsed = totalMarginUsed;
     const balance = totalUsd - marginUsed; // free collateral (consistent with other exchanges)
     const marginFreePercent = totalUsd > 0 ? (balance / totalUsd) * 100 : 100;
@@ -186,7 +221,11 @@ export class HyperliquidFetcher implements ExchangeFetcher {
       positionCount: allPositions.length,
       unrealizedPnl,
       positions: allPositions,
-      raw: {} as Record<string, unknown>,
+      raw: {
+        balanceSource: usesUnifiedBalance ? "spotClearinghouseState:stablecoin-total" : "perp-accountValue-fallback",
+        perpAccountValue: totalAccountValue,
+        unifiedCollateralUsd,
+      },
     };
   }
 }
