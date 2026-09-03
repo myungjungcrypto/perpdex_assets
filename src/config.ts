@@ -126,6 +126,15 @@ export const config = {
     ),
   },
 
+  // Arcus (dYdX Labs × Robinhood Crypto DEX on Robinhood Chain)
+  // Store ONLY the Ed25519 PUBLIC key — reads need no signature, and orders
+  // require the private key, which must never be placed on this server.
+  arcus: {
+    apiKey: optEnv("ARCUS_API_KEY"),
+    address: optEnv("ARCUS_ADDRESS"),
+    baseUrl: env("ARCUS_BASE_URL", "https://api.arcus.xyz"),
+  },
+
   // Variational Omni opportunity watcher (public market API — no account access)
   variationalWatch: {
     // Tickers to watch for long-entry capacity, e.g. "QQQ" or "QQQ,SPY"

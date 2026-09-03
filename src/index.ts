@@ -8,6 +8,7 @@ import { NadoFetcher } from "./exchanges/nado.js";
 import { O1ExchangeFetcher } from "./exchanges/o1exchange.js";
 import { VariationalFetcher } from "./exchanges/variational.js";
 import { HyperliquidFetcher } from "./exchanges/hyperliquid.js";
+import { ArcusFetcher } from "./exchanges/arcus.js";
 import { BrokerFetcher } from "./brokers/types.js";
 import { KiwoomFetcher } from "./brokers/kiwoom.js";
 import { KiwoomFuturesFetcher } from "./brokers/kiwoom-futures.js";
@@ -50,6 +51,7 @@ const fetchers: ExchangeFetcher[] = [
   new O1ExchangeFetcher(),
   new VariationalFetcher(),
   ...hyperliquidFetchers,
+  new ArcusFetcher(),
 ];
 
 // Korean brokerages — polled on a slower cadence than the perp DEXes
