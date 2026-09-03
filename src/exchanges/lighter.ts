@@ -42,19 +42,30 @@ interface LighterResponse {
 }
 
 export class LighterFetcher implements ExchangeFetcher {
-  name = "Lighter";
+  name: string;
   enabled: boolean;
+  private roToken?: string;
+  private baseUrl: string;
 
-  constructor() {
-    this.enabled = !!config.lighter.roToken;
+  // Defaults cover the original mainnet instance; pass overrides for other
+  // deployments, e.g. Robinhood Chain (api.rh.lighter.xyz) as "Lighter-RH".
+  constructor(
+    roToken: string | undefined = config.lighter.roToken,
+    baseUrl: string = config.lighter.baseUrl,
+    label = "Lighter",
+  ) {
+    this.name = label;
+    this.roToken = roToken;
+    this.baseUrl = baseUrl;
+    this.enabled = !!roToken;
     if (!this.enabled) {
-      logger.warn("Lighter: Read-Only token not set — skipping");
+      logger.warn(`${label}: Read-Only token not set — skipping`);
     }
   }
 
   private getAccountIndex(): string {
     // Extract account index from RO token: ro:{account_index}:{scope}:{expiry}:{hex}
-    const parts = config.lighter.roToken!.split(":");
+    const parts = this.roToken!.split(":");
     if (parts.length >= 2 && parts[0] === "ro") {
       return parts[1];
     }
@@ -63,7 +74,7 @@ export class LighterFetcher implements ExchangeFetcher {
   }
 
   async fetchBalance(): Promise<ExchangeBalance> {
-    const base = config.lighter.baseUrl;
+    const base = this.baseUrl;
     const accountIndex = this.getAccountIndex();
 
     const accountRes = await axios.get<LighterResponse>(`${base}/api/v1/account`, {
@@ -75,7 +86,7 @@ export class LighterFetcher implements ExchangeFetcher {
     const data = accountRes.data;
     const account = data.accounts?.[0];
     if (!account) {
-      throw new Error(`Lighter: no account found for index ${accountIndex}`);
+      throw new Error(`${this.name}: no account found for index ${accountIndex}`);
     }
 
     const collateral = Number(account.collateral ?? 0);

@@ -42,6 +42,7 @@ const hyperliquidFetchers: ExchangeFetcher[] = hyperliquidAddresses.map((addr, i
 const fetchers: ExchangeFetcher[] = [
   new ParadexFetcher(),
   new LighterFetcher(),
+  new LighterFetcher(config.lighterRh.roToken, config.lighterRh.baseUrl, "Lighter-RH"),
   new ExtendedFetcher(),
   ...pacificaFetchers,
   ...nadoFetchers,

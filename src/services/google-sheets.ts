@@ -45,6 +45,7 @@ const EXCHANGE_ROW: Record<string, number> = {
   "Hyperliquid-1": 13,
   "Hyperliquid-2": 14,
   "Hyperliquid-3": 15,
+  "Lighter-RH": 16,
 };
 
 export async function updateBalanceLog(
@@ -226,6 +227,7 @@ export async function appendSummary(
     "Hyperliquid",
     "Hyperliquid-2",
     "Hyperliquid-3",
+    "Lighter-RH",
   ];
 
   const row = [
@@ -288,6 +290,7 @@ export async function ensureSheetHeaders(): Promise<void> {
       "Hyperliquid",
       "Hyperliquid-2",
       "Hyperliquid-3",
+      "Lighter-RH",
       "Alert",
     ],
   ];
@@ -335,7 +338,7 @@ export async function ensureSheetHeaders(): Promise<void> {
     if (!summaryCheck.data.values?.length) {
       await sheets.spreadsheets.values.update({
         spreadsheetId,
-        range: `${config.google.summarySheet}!A1:Q1`,
+        range: `${config.google.summarySheet}!A1:R1`,
         valueInputOption: "RAW",
         requestBody: { values: summaryHeaders },
       });

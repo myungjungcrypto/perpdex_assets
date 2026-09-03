@@ -73,6 +73,13 @@ export const config = {
     baseUrl: env("LIGHTER_BASE_URL", "https://mainnet.zklighter.elliot.ai"),
   },
 
+  // Lighter on Robinhood Chain (robinhoodchain.lighter.xyz) — separate rollup,
+  // separate account/RO token from mainnet Lighter
+  lighterRh: {
+    roToken: optEnv("LIGHTER_RH_RO_TOKEN"),
+    baseUrl: env("LIGHTER_RH_BASE_URL", "https://api.rh.lighter.xyz"),
+  },
+
   // Extended
   extended: {
     apiKey: optEnv("EXTENDED_API_KEY"),
