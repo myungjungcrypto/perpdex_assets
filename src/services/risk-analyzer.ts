@@ -66,13 +66,16 @@ export function analyzeRisk(balance: ExchangeBalance): RiskAssessment {
   const pct = balance.marginFreePercent;
   const th = marginThresholds(balance.exchange);
 
-  // Overall margin-level risk
+  // Overall margin-level risk. A threshold of 0 (or below) disables that
+  // level — "EXCHANGE:0:0:0" turns margin-free alerts off entirely, which
+  // matters on cross-margin venues where available balance legitimately
+  // reaches 0 while liquidation is still far away.
   let level: RiskLevel = "safe";
-  if (pct <= th.critical) {
+  if (th.critical > 0 && pct <= th.critical) {
     level = "critical";
-  } else if (pct <= th.danger) {
+  } else if (th.danger > 0 && pct <= th.danger) {
     level = "danger";
-  } else if (pct <= th.warning) {
+  } else if (th.warning > 0 && pct <= th.warning) {
     level = "warning";
   }
 
@@ -90,15 +93,15 @@ export function analyzeRisk(balance: ExchangeBalance): RiskAssessment {
 
   // Build message
   const parts: string[] = [];
-  if (pct <= th.warning) {
+  if (th.warning > 0 && pct <= th.warning) {
     const marginMessages: Record<RiskLevel, string> = {
       safe: "",
       warning: `Margin free at ${pct.toFixed(1)}% — approaching risk zone`,
       danger: `Margin free at ${pct.toFixed(1)}% — liquidation risk!`,
       critical: `MARGIN FREE ${pct.toFixed(1)}% — LIQUIDATION IMMINENT!`,
     };
-    const marginLevel: RiskLevel = pct <= th.critical ? "critical"
-      : pct <= th.danger ? "danger"
+    const marginLevel: RiskLevel = th.critical > 0 && pct <= th.critical ? "critical"
+      : th.danger > 0 && pct <= th.danger ? "danger"
       : "warning";
     parts.push(marginMessages[marginLevel]);
   }
