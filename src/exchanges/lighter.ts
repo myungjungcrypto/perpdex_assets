@@ -101,13 +101,30 @@ export class LighterFetcher implements ExchangeFetcher {
       .map((p) => {
         const pnl = Number(p.unrealized_pnl ?? 0);
         totalUnrealizedPnl += pnl;
+        const side = p.sign >= 0 ? "long" as const : "short" as const;
+        const size = Math.abs(Number(p.position));
+        // position_value is the current notional — mark = notional / size
+        const mark = size > 0 ? Number(p.position_value) / size : undefined;
+        const liqPx = Number(p.liquidation_price) || undefined;
+
+        // Distance to liquidation (%) — enables per-position distance alerts
+        let liquidationDistancePercent: number | undefined;
+        if (mark && liqPx && mark > 0) {
+          liquidationDistancePercent = side === "short"
+            ? ((liqPx - mark) / mark) * 100
+            : ((mark - liqPx) / mark) * 100;
+        }
+
         return {
           market: p.symbol ?? `market-${p.market_id}`,
-          side: p.sign >= 0 ? "long" as const : "short" as const,
-          size: Math.abs(Number(p.position)),
+          side,
+          size,
           entryPrice: Number(p.avg_entry_price),
+          markPrice: mark,
           unrealizedPnl: pnl,
-          liquidationPrice: Number(p.liquidation_price) || undefined,
+          liquidationPrice: liqPx,
+          liquidationDistancePercent,
+          marginMode: p.margin_mode === 1 ? "isolated" as const : "cross" as const,
           leverage: p.initial_margin_fraction
             ? 1 / Number(p.initial_margin_fraction)
             : undefined,
