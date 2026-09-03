@@ -14,6 +14,7 @@ import { KiwoomFuturesFetcher } from "./brokers/kiwoom-futures.js";
 import { updateBalanceLog, appendSummary, ensureSheetHeaders, updateBrokerLog, ensureBrokerLogHeaders } from "./services/google-sheets.js";
 import { sendAlerts, sendStartupMessage, startTelegramCommandListener, writeStatusToFile, StatusSnapshot } from "./services/telegram.js";
 import { analyzeAll } from "./services/risk-analyzer.js";
+import { checkVariationalOpportunities } from "./services/variational-watch.js";
 import { logger } from "./utils/logger.js";
 
 const CYCLE_INTERVAL_MS = Number(process.env.CYCLE_INTERVAL_MS ?? 60_000); // default 1 min
@@ -92,6 +93,11 @@ async function run(): Promise<void> {
 
   // Brokers run on their own cadence; a failure here must not block exchanges
   runBrokers().catch((err) => logger.error("Broker cycle failed", err));
+
+  // Variational long-capacity watcher (public market API, fire-and-forget)
+  checkVariationalOpportunities().catch((err) =>
+    logger.error("Variational watch failed", err)
+  );
 
   const enabledFetchers = fetchers.filter((f) => f.enabled);
   if (enabledFetchers.length === 0) {

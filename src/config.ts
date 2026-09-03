@@ -126,6 +126,18 @@ export const config = {
     ),
   },
 
+  // Variational Omni opportunity watcher (public market API — no account access)
+  variationalWatch: {
+    // Tickers to watch for long-entry capacity, e.g. "QQQ" or "QQQ,SPY"
+    tickers: (optEnv("VARIATIONAL_WATCH_TICKERS") ?? "")
+      .split(",")
+      .map((t) => t.trim().toUpperCase())
+      .filter(Boolean),
+    // Quote size tier that must be quotable on the ask side: 1k | 100k | 1m
+    sizeTier: env("VARIATIONAL_WATCH_SIZE", "100k"),
+    cooldownMinutes: Number(env("VARIATIONAL_WATCH_COOLDOWN_MINUTES", "60")),
+  },
+
   // Hyperliquid (supports comma-separated addresses: addr1,addr2)
   hyperliquid: {
     walletAddresses: (optEnv("HYPERLIQUID_WALLET_ADDRESS") ?? "")

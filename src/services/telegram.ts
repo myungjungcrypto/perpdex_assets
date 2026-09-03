@@ -198,6 +198,15 @@ async function sendMessage(chatId: string | number, text: string): Promise<void>
   );
 }
 
+// Plain notification to the configured chat (used by opportunity watchers etc.)
+export async function sendPlainMessage(text: string): Promise<void> {
+  try {
+    await sendMessage(config.telegram.chatId, text);
+  } catch (err) {
+    logger.error(`Failed to send Telegram message (${describeAxiosError(err)})`);
+  }
+}
+
 export async function sendAlert(assessment: RiskAssessment): Promise<void> {
   if (!shouldSend(assessment)) return;
 
