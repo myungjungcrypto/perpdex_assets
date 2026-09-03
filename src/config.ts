@@ -165,6 +165,11 @@ export const config = {
     warningPercent: Number(env("RISK_WARNING_PERCENT", "20")),
     dangerPercent: Number(env("RISK_DANGER_PERCENT", "10")),
     criticalPercent: Number(env("RISK_CRITICAL_PERCENT", "5")),
+    // Per-exchange margin-free % overrides (same format as coin overrides):
+    // "EXCHANGE:warn:danger:critical", e.g. "Lighter-RH:10:5:2,Paradex:15:8:4"
+    exchangeMarginThresholds: parseCustomDistances(
+      optEnv("RISK_EXCHANGE_MARGIN_THRESHOLDS") ?? ""
+    ),
     // Per-position liquidation distance thresholds (%)
     positionWarningDistance: Number(env("POSITION_WARNING_DISTANCE", "30")),
     positionDangerDistance: Number(env("POSITION_DANGER_DISTANCE", "15")),

@@ -52,16 +52,27 @@ function formatPositionLine(p: Position): string {
   return `${emoji} ${p.market} ${p.side}${lev}${mode} ${p.size} @ ${mark}${liqStr}${distStr}`;
 }
 
+// Per-exchange margin-free thresholds, falling back to the global defaults
+function marginThresholds(exchange: string) {
+  const custom = config.risk.exchangeMarginThresholds[exchange.toUpperCase()];
+  return {
+    warning: custom?.warning ?? config.risk.warningPercent,
+    danger: custom?.danger ?? config.risk.dangerPercent,
+    critical: custom?.critical ?? config.risk.criticalPercent,
+  };
+}
+
 export function analyzeRisk(balance: ExchangeBalance): RiskAssessment {
   const pct = balance.marginFreePercent;
+  const th = marginThresholds(balance.exchange);
 
   // Overall margin-level risk
   let level: RiskLevel = "safe";
-  if (pct <= config.risk.criticalPercent) {
+  if (pct <= th.critical) {
     level = "critical";
-  } else if (pct <= config.risk.dangerPercent) {
+  } else if (pct <= th.danger) {
     level = "danger";
-  } else if (pct <= config.risk.warningPercent) {
+  } else if (pct <= th.warning) {
     level = "warning";
   }
 
@@ -79,15 +90,15 @@ export function analyzeRisk(balance: ExchangeBalance): RiskAssessment {
 
   // Build message
   const parts: string[] = [];
-  if (pct <= config.risk.warningPercent) {
+  if (pct <= th.warning) {
     const marginMessages: Record<RiskLevel, string> = {
       safe: "",
       warning: `Margin free at ${pct.toFixed(1)}% — approaching risk zone`,
       danger: `Margin free at ${pct.toFixed(1)}% — liquidation risk!`,
       critical: `MARGIN FREE ${pct.toFixed(1)}% — LIQUIDATION IMMINENT!`,
     };
-    const marginLevel: RiskLevel = pct <= config.risk.criticalPercent ? "critical"
-      : pct <= config.risk.dangerPercent ? "danger"
+    const marginLevel: RiskLevel = pct <= th.critical ? "critical"
+      : pct <= th.danger ? "danger"
       : "warning";
     parts.push(marginMessages[marginLevel]);
   }
