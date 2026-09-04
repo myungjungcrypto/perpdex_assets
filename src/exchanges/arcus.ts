@@ -40,7 +40,13 @@ export class ArcusFetcher implements ExchangeFetcher {
   }
 
   private parsePositions(raw: unknown): { positions: Position[]; pnl: number } {
-    const arr = Array.isArray(raw) ? (raw as Record<string, unknown>[]) : [];
+    // The account endpoint returns positions as an object keyed by marketId;
+    // GET /v1/positions may return an array — accept both.
+    const arr: Record<string, unknown>[] = Array.isArray(raw)
+      ? (raw as Record<string, unknown>[])
+      : raw && typeof raw === "object"
+        ? (Object.values(raw) as Record<string, unknown>[])
+        : [];
     let pnl = 0;
     const positions: Position[] = [];
     for (const p of arr) {
@@ -49,8 +55,8 @@ export class ArcusFetcher implements ExchangeFetcher {
       const sideRaw = String(p.side ?? "").toUpperCase();
       const side: "long" | "short" =
         sideRaw === "SHORT" || sideRaw === "SELL" || size < 0 ? "short" : "long";
-      const mark = optNum(p.markPrice ?? p.oraclePrice ?? p.indexPrice);
-      const liqPx = optNum(p.liquidationPrice ?? p.liqPrice);
+      const mark = optNum(p.markPx ?? p.markPrice ?? p.oraclePrice ?? p.indexPrice);
+      const liqPx = optNum(p.liquidationPrice ?? p.liquidationPx ?? p.liqPrice);
       const positionPnl = num(p.unrealizedPnl ?? p.unrealisedPnl ?? p.upnl);
       pnl += positionPnl;
 
@@ -63,7 +69,7 @@ export class ArcusFetcher implements ExchangeFetcher {
 
       const modeRaw = String(p.marginMode ?? "").toUpperCase();
       positions.push({
-        market: String(p.market ?? p.symbol ?? p.ticker ?? "unknown"),
+        market: String(p.marketDisplayName ?? p.market ?? p.symbol ?? p.ticker ?? "unknown"),
         side,
         size: Math.abs(size),
         entryPrice: num(p.entryPrice ?? p.avgEntryPrice ?? p.averageEntryPrice),
