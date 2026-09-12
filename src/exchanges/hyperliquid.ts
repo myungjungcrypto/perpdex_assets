@@ -165,6 +165,7 @@ export class HyperliquidFetcher implements ExchangeFetcher {
 
     let totalAccountValue = 0;
     let totalMarginUsed = 0;
+    let totalMaintenanceUsed = 0;
     const allPositions: Position[] = [];
 
     perpResults.forEach((result, i) => {
@@ -186,6 +187,9 @@ export class HyperliquidFetcher implements ExchangeFetcher {
       // Isolated positions manage their own risk via liquidation distance
       // and should not inflate the account-level margin free %.
       totalMarginUsed += Number(data.crossMarginSummary.totalMarginUsed);
+      // Maintenance margin is the liquidation threshold — used for the
+      // margin-free % so it measures true distance to liquidation.
+      totalMaintenanceUsed += Number(data.crossMaintenanceMarginUsed || 0);
 
       const midResult = midResults[i];
       const mids = midResult.status === "fulfilled" ? midResult.value : {};
@@ -208,7 +212,10 @@ export class HyperliquidFetcher implements ExchangeFetcher {
     }
     const marginUsed = totalMarginUsed;
     const balance = totalUsd - marginUsed; // free collateral (consistent with other exchanges)
-    const marginFreePercent = totalUsd > 0 ? (balance / totalUsd) * 100 : 100;
+    // Risk % measures buffer to LIQUIDATION (maintenance margin), not to the
+    // initial-margin cap — falls back to initial margin if maintenance is 0.
+    const riskMargin = totalMaintenanceUsed > 0 ? totalMaintenanceUsed : totalMarginUsed;
+    const marginFreePercent = totalUsd > 0 ? ((totalUsd - riskMargin) / totalUsd) * 100 : 100;
     const unrealizedPnl = allPositions.reduce((sum, p) => sum + p.unrealizedPnl, 0);
 
     return {

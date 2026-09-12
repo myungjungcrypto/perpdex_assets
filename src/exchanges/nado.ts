@@ -163,8 +163,12 @@ export class NadoFetcher implements ExchangeFetcher {
     const freeMargin = Math.max(initialHealth, 0);
     const marginUsed = totalUsd - freeMargin;
 
+    // Liquidation happens when MAINTENANCE health hits 0, so risk % is
+    // measured against maintenance health. It is always >= initial health,
+    // so max() also covers the case where maintenance wasn't parsed (0).
+    const riskHealth = Math.max(maintenanceHealth, initialHealth);
     const marginFreePercent =
-      totalUsd > 0 ? (freeMargin / totalUsd) * 100 : 100;
+      totalUsd > 0 ? (Math.max(riskHealth, 0) / totalUsd) * 100 : 100;
 
     // USDC is product_id 0 typically
     const usdcBalance = spotBalances.find((b) => b.product_id === 0);
