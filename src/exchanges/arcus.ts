@@ -27,15 +27,58 @@ function optNum(v: unknown): number | undefined {
 }
 
 let loggedRawOnce = false;
+let loggedMarketsOnce = false;
 
 export class ArcusFetcher implements ExchangeFetcher {
   name = "Arcus";
   enabled: boolean;
 
+  // marketDisplayName -> maintenance margin fraction, refreshed hourly
+  private mmfByMarket = new Map<string, number>();
+  private mmfFetchedAt = 0;
+
   constructor() {
     this.enabled = !!config.arcus.apiKey && !!config.arcus.address;
     if (!this.enabled) {
       logger.info("Arcus: API key/address not set — skipping");
+    }
+  }
+
+  // Maintenance-margin fractions from /v1/markets (dYdX-style). Needed to
+  // turn freeCollateral (an INITIAL-margin measure that legitimately goes
+  // negative) into a true distance-to-liquidation percentage.
+  private async refreshMaintenanceFractions(): Promise<void> {
+    if (Date.now() - this.mmfFetchedAt < 60 * 60 * 1000 && this.mmfByMarket.size > 0) {
+      return;
+    }
+    try {
+      const res = await axios.get(`${config.arcus.baseUrl}/v1/markets`, {
+        headers: { "X-API-Key": config.arcus.apiKey!, Accept: "application/json" },
+        timeout: 10000,
+      });
+      const body = res.data as Record<string, unknown>;
+      const rawList = body.markets ?? body;
+      const list: Record<string, unknown>[] = Array.isArray(rawList)
+        ? (rawList as Record<string, unknown>[])
+        : rawList && typeof rawList === "object"
+          ? (Object.values(rawList) as Record<string, unknown>[])
+          : [];
+      if (!loggedMarketsOnce && list.length > 0) {
+        loggedMarketsOnce = true;
+        logger.info(`Arcus raw market[0]: ${JSON.stringify(list[0]).slice(0, 1000)}`);
+      }
+      for (const m of list) {
+        const name = String(m.marketDisplayName ?? m.displayName ?? m.ticker ?? m.market ?? "");
+        const mmf = optNum(
+          m.maintenanceMarginFraction ?? m.maintenanceMarginFrac ?? m.mmf
+        );
+        if (name && mmf !== undefined && mmf > 0 && mmf < 1) {
+          this.mmfByMarket.set(name, mmf);
+        }
+      }
+      this.mmfFetchedAt = Date.now();
+    } catch (err) {
+      logger.warn(`Arcus: markets fetch failed — ${(err as Error).message}`);
     }
   }
 
@@ -119,7 +162,27 @@ export class ArcusFetcher implements ExchangeFetcher {
 
     const { positions, pnl } = this.parsePositions(posRaw);
 
-    const marginFreePercent = equity > 0 ? (freeCollateral / equity) * 100 : 100;
+    // Distance to liquidation: (equity - maintenance margin) / equity.
+    // freeCollateral measures INITIAL margin and goes negative long before
+    // liquidation risk is real, so it is only the fallback.
+    await this.refreshMaintenanceFractions();
+    let maintenanceMargin = 0;
+    let mmComplete = positions.length > 0;
+    for (const p of positions) {
+      const mmf = this.mmfByMarket.get(p.market);
+      const mark = p.markPrice ?? p.entryPrice;
+      if (mmf === undefined || !mark) {
+        mmComplete = false;
+        break;
+      }
+      maintenanceMargin += Math.abs(p.size * mark) * mmf;
+    }
+
+    const marginFreePercent = mmComplete && equity > 0
+      ? ((equity - maintenanceMargin) / equity) * 100
+      : equity > 0
+        ? (freeCollateral / equity) * 100
+        : 100;
 
     return {
       exchange: this.name,
