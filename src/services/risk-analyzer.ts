@@ -12,18 +12,21 @@ function isXyzMarket(market: string): boolean {
   return prefix.length > 0 && market.toLowerCase().startsWith(prefix);
 }
 
-function positionRiskLevel(p: Position): RiskLevel {
+function positionRiskLevel(p: Position, exchange?: string): RiskLevel {
   if (p.liquidationDistancePercent == null) return "safe";
   const dist = p.liquidationDistancePercent;
   const coin = getCoinName(p.market);
   const custom = config.risk.positionCustomDistances[coin];
-  // Priority: per-coin override > xyz: prefix override > global defaults
-  const xyz = !custom && isXyzMarket(p.market);
-  const criticalDist = custom?.critical
+  const exCustom = exchange
+    ? config.risk.positionExchangeDistances[exchange.toUpperCase()]
+    : undefined;
+  // Priority: per-coin override > per-exchange override > xyz: prefix > global
+  const xyz = !custom && !exCustom && isXyzMarket(p.market);
+  const criticalDist = custom?.critical ?? exCustom?.critical
     ?? (xyz ? config.risk.positionXyzCriticalDistance : config.risk.positionCriticalDistance);
-  const dangerDist = custom?.danger
+  const dangerDist = custom?.danger ?? exCustom?.danger
     ?? (xyz ? config.risk.positionXyzDangerDistance : config.risk.positionDangerDistance);
-  const warningDist = custom?.warning
+  const warningDist = custom?.warning ?? exCustom?.warning
     ?? (xyz ? config.risk.positionXyzWarningDistance : config.risk.positionWarningDistance);
   if (dist <= criticalDist) return "critical";
   if (dist <= dangerDist) return "danger";
@@ -37,8 +40,8 @@ function positionRiskEmoji(level: RiskLevel): string {
   return { safe: "\u{2705}", warning: "\u{26A0}\u{FE0F}", danger: "\u{1F7E0}", critical: "\u{1F534}" }[level];
 }
 
-function formatPositionLine(p: Position): string {
-  const pLevel = positionRiskLevel(p);
+function formatPositionLine(p: Position, exchange?: string): string {
+  const pLevel = positionRiskLevel(p, exchange);
   const emoji = positionRiskEmoji(pLevel);
   const mode = p.marginMode === "isolated" ? " [iso]" : "";
   const lev = p.leverage ? ` ${p.leverage}x` : "";
@@ -82,7 +85,7 @@ export function analyzeRisk(balance: ExchangeBalance): RiskAssessment {
   // Per-position liquidation distance risk — escalate if any position is worse
   let worstPositionLevel: RiskLevel = "safe";
   for (const p of balance.positions) {
-    const pLevel = positionRiskLevel(p);
+    const pLevel = positionRiskLevel(p, balance.exchange);
     if (LEVEL_SEVERITY[pLevel] > LEVEL_SEVERITY[worstPositionLevel]) {
       worstPositionLevel = pLevel;
     }
@@ -108,12 +111,12 @@ export function analyzeRisk(balance: ExchangeBalance): RiskAssessment {
 
   // Position-level warnings
   const riskyPositions = balance.positions
-    .filter((p) => LEVEL_SEVERITY[positionRiskLevel(p)] >= LEVEL_SEVERITY.warning)
+    .filter((p) => LEVEL_SEVERITY[positionRiskLevel(p, balance.exchange)] >= LEVEL_SEVERITY.warning)
     .sort((a, b) =>
-      LEVEL_SEVERITY[positionRiskLevel(b)] - LEVEL_SEVERITY[positionRiskLevel(a)]
+      LEVEL_SEVERITY[positionRiskLevel(b, balance.exchange)] - LEVEL_SEVERITY[positionRiskLevel(a, balance.exchange)]
     );
   for (const p of riskyPositions) {
-    const pLevel = positionRiskLevel(p);
+    const pLevel = positionRiskLevel(p, balance.exchange);
     const dist = p.liquidationDistancePercent!.toFixed(1);
     if (pLevel === "critical") {
       parts.push(`${p.market}: liq ${dist}% away — IMMINENT!`);
@@ -125,7 +128,9 @@ export function analyzeRisk(balance: ExchangeBalance): RiskAssessment {
   }
 
   // Position details
-  const positionLines = balance.positions.map(formatPositionLine).join("\n");
+  const positionLines = balance.positions
+    .map((p) => formatPositionLine(p, balance.exchange))
+    .join("\n");
 
   return {
     exchange: balance.exchange,

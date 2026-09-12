@@ -195,6 +195,11 @@ export const config = {
     positionWarningDistance: Number(env("POSITION_WARNING_DISTANCE", "30")),
     positionDangerDistance: Number(env("POSITION_DANGER_DISTANCE", "15")),
     positionCriticalDistance: Number(env("POSITION_CRITICAL_DISTANCE", "7")),
+    // Per-exchange liquidation-distance overrides (same format as coin overrides):
+    // "EXCHANGE:warn:danger:critical", e.g. "Lighter-RH:7:5:2"
+    positionExchangeDistances: parseCustomDistances(
+      optEnv("POSITION_EXCHANGE_DISTANCES") ?? ""
+    ),
     alertCooldownMinutes: Number(env("ALERT_COOLDOWN_MINUTES", "30")),
     // Per-coin custom warning distance overrides
     // Format: "COIN:warn:danger:critical,COIN2:warn:danger:critical"
